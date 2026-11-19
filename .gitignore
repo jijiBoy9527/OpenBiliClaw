@@ -114,3 +114,17 @@ backend.err
 # DSH 插件：独立仓库（github.com/dsh-external/dsh-openbiliclaw），不随主仓库提交
 dsh-plugin/
 .sponsored/
+
+# MediaCrawler：采集底座已并入本仓库，但环境、数据与登录态永远不入库
+MediaCrawler/.git/
+MediaCrawler/.venv/
+MediaCrawler/node_modules/
+MediaCrawler/data/
+MediaCrawler/browser_data/
+MediaCrawler/temp_image/
+MediaCrawler/downloads/
+MediaCrawler/.env
+MediaCrawler/.env.local
+MediaCrawler/**/cookies*.json
+MediaCrawler/**/storage_state*.json
+MediaCrawler/**/*.session
