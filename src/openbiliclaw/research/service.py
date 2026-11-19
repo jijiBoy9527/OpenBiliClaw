@@ -203,11 +203,14 @@ class Service:
                 "--get_media", "no", "--save_data_option", "jsonl", "--save_data_path", str(directory)]
         if not discovery:
             args += ["--specified_id", ",".join(config["urls"])]
-        environment = {**os.environ, "XHS_OPENCLI_REQUEST_INTERVAL": str(config["interval"]),
-                       # 单次浏览会话的请求上限；40 是历史遗留硬顶，不是安全值。
-                       "XHS_OPENCLI_MAX_REQUESTS": str(config.get("max_requests", 15)),
-                       "XHS_BROWSER_BACKEND": "openbiliclaw",
+        environment = {**os.environ, "XHS_BROWSER_BACKEND": "openbiliclaw",
                        "XHS_RESEARCH_PROGRESS": str(directory / "progress.jsonl")}
+        # 间隔和请求上限只在任务显式指定时才覆盖；不指定就用 MediaCrawler 自身默认值
+        # （2 秒间隔、不限请求数），不在这一层叠加额外限速。
+        if config.get("interval") is not None:
+            environment["XHS_OPENCLI_REQUEST_INTERVAL"] = str(config["interval"])
+        if config.get("max_requests") is not None:
+            environment["XHS_OPENCLI_MAX_REQUESTS"] = str(config["max_requests"])
         with (directory / "private-crawler.log").open("ab") as log:
             spawning = asyncio.create_task(asyncio.create_subprocess_exec(
                 *args, cwd=self.root, env=environment, stdin=asyncio.subprocess.PIPE, stdout=log, stderr=log,
@@ -230,7 +233,9 @@ class Service:
                 raise ValueError("采集进程未能接收登录态，已停止；请检查本机采集环境") from None
             finally:
                 del session
-            self.store.event(job["id"], f"{'发现内容' if discovery else '采集评论'}；HTTP 间隔 {config['interval']} 秒，请勿关闭工作台服务")
+            interval = config.get("interval")
+            pace = f"HTTP 间隔 {interval} 秒" if interval is not None else "使用 MediaCrawler 默认节奏"
+            self.store.event(job["id"], f"{'发现内容' if discovery else '采集评论'}；{pace}，请勿关闭工作台服务")
             while self.process.returncode is None:
                 try:
                     await asyncio.wait_for(asyncio.shield(self.process.wait()), 2)
@@ -269,7 +274,10 @@ class Service:
             events = {p.get("event") for p in progress}
             reason = ("已有其他采集任务占用账号" if "account_busy" in events else
                       "请到设置 → 平台源 → 小红书检查 OpenBiliClaw 插件和登录状态" if "login_required" in events else
-                      "请求受限、达到请求上限或网络失败；请检查浏览器，不自动重试")
+                      "小红书限制了访问（繁忙、验证码或 IP/账号风控）；已停止，请稍后再试或检查登录状态"
+                      if "platform_restricted" in events else
+                      "已达到设置的请求上限；可调高上限后再采，或稍后继续" if "request_cap_reached" in events else
+                      "网络失败或采集进程异常退出；请查看采集日志")
             self.store.update(job["id"], state="partial" if has_data else "failed",
                               message=f"{reason}。已保存的数据仍可导出" + (f"；{invalid} 行文件不完整" if invalid else ""))
         elif not has_data:

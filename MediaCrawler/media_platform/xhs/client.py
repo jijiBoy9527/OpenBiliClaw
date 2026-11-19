@@ -108,11 +108,15 @@ class XiaoHongShuClient(AbstractApiClient, ProxyRefreshMixin):
         if not config.XHS_HTTP_SESSION_MODE:
             return await self._request_with_retry(method, url, **kwargs)
         # Pace real HTTP requests, not just OpenCLI commands. No automatic retries.
+        # Only platform-side restrictions (IP/account/captcha) stop the batch; an
+        # ordinary failed request (e.g. one bad note) does not abort the rest.
         async with self._request_lock:
             if self._stopped:
-                raise PlatformAccessError("本批采集已因错误停止；不会继续发送请求。")
-            if self._request_count >= config.XHS_OPENCLI_MAX_REQUESTS:
+                raise PlatformAccessError("本批采集已因平台限制停止；不会继续发送请求。")
+            max_requests = config.XHS_OPENCLI_MAX_REQUESTS
+            if max_requests and self._request_count >= max_requests:
                 self._stopped = True
+                report("request_cap_reached", limit=max_requests)
                 raise PlatformAccessError("已达到本批 HTTP 请求上限；保留已保存的数据并停止。")
             await asyncio.sleep(max(0, self._next_request_at - time.time()))
             self._request_count += 1
@@ -120,10 +124,16 @@ class XiaoHongShuClient(AbstractApiClient, ProxyRefreshMixin):
             self._save_pacing(time.time() + self.timeout + config.XHS_OPENCLI_REQUEST_INTERVAL)
             try:
                 return await self._request_once(method, url, **kwargs)
-            except NoteNotFoundError:
-                raise
-            except Exception:
+            except (PlatformAccessError, IPBlockError) as error:
                 self._stopped = True
+                report("platform_restricted", reason=str(error)[:200])
+                raise
+            except DataFetchError as error:
+                # The server's "busy / too frequent" reply is rate limiting, not a bad note:
+                # keep going would only deepen it, so stop the batch and cool down.
+                if any(word in str(error) for word in ("繁忙", "频繁", "太多", "too frequent", "too many")):
+                    self._stopped = True
+                    report("platform_restricted", reason=str(error)[:200])
                 raise
             finally:
                 self._save_pacing(time.time() + config.XHS_OPENCLI_REQUEST_INTERVAL)

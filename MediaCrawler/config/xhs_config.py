@@ -28,14 +28,17 @@ import os
 XHS_BROWSER_BACKEND = os.getenv("XHS_BROWSER_BACKEND", "playwright")
 XHS_HTTP_SESSION_MODE = XHS_BROWSER_BACKEND in {"opencli", "openbiliclaw"}
 OPENCLI_NODE_BINARY = os.getenv("OPENCLI_NODE_BINARY", "node")
-XHS_OPENCLI_REQUEST_INTERVAL = int(os.getenv("XHS_OPENCLI_REQUEST_INTERVAL", "60"))
-if XHS_OPENCLI_REQUEST_INTERVAL < 10 or XHS_OPENCLI_REQUEST_INTERVAL > 120:
-    raise ValueError("opencli HTTP 请求间隔必须在 10 至 120 秒之间")
+# Minimum gap between HTTP requests in session mode. Default 2s matches the native
+# CRAWLER_MAX_SLEEP_SEC pacing; callers that need a gentler rhythm set it explicitly.
+XHS_OPENCLI_REQUEST_INTERVAL = float(os.getenv("XHS_OPENCLI_REQUEST_INTERVAL", "2"))
+if XHS_OPENCLI_REQUEST_INTERVAL < 0 or XHS_OPENCLI_REQUEST_INTERVAL > 120:
+    raise ValueError("HTTP 请求间隔必须在 0 至 120 秒之间")
 XHS_OPENCLI_STATE_PATH = os.getenv("XHS_OPENCLI_STATE_PATH", "")
-# Per process, including login check and HTML requests. Callers may lower it
-# (the research workbench uses 15 for a single browsing session); 40 is the
-# legacy ceiling, not a recommendation.
-XHS_OPENCLI_MAX_REQUESTS = int(os.getenv("XHS_OPENCLI_MAX_REQUESTS", "40"))
+# Per process request ceiling, including login check and HTML requests.
+# 0 = unlimited (native MediaCrawler behaviour); set it only to cap a batch on purpose.
+XHS_OPENCLI_MAX_REQUESTS = int(os.getenv("XHS_OPENCLI_MAX_REQUESTS", "0"))
+if XHS_OPENCLI_MAX_REQUESTS < 0:
+    raise ValueError("HTTP 请求上限不能为负数；0 表示不限制")
 
 # Sorting method, the specific enumeration value is in media_platform/xhs/field.py
 SORT_TYPE = "popularity_descending"

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import os
-import random
 import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -28,9 +27,9 @@ class Input(BaseModel):
 
 class Discover(Input):
     topic: str = Field(min_length=1, max_length=100)
-    max_notes: int = Field(default=5, ge=1, le=20)
-    # 省略 = 每次任务随机 45–75 秒，避免固定节奏成为可识别的机器模式。
-    interval: int | None = Field(default=None, ge=10, le=120)
+    max_notes: int = Field(default=5, ge=1, le=100)
+    # 省略 = 使用 MediaCrawler 默认节奏；显式填写才覆盖（秒）。
+    interval: int | None = Field(default=None, ge=0, le=120)
 
 
 class Collect(Input):
@@ -40,7 +39,7 @@ class Collect(Input):
     urls: list[str] = Field(default_factory=list, max_length=10)
     max_comments: int = Field(default=20, ge=1, le=100)
     include_replies: bool = True
-    interval: int | None = Field(default=None, ge=10, le=120)
+    interval: int | None = Field(default=None, ge=0, le=120)
 
 
 class Analyze(Input):
@@ -51,7 +50,7 @@ class Analyze(Input):
 
 class FeedDiscover(Input):
     topic: str = Field(min_length=1, max_length=100)
-    max_notes: int = Field(default=20, ge=1, le=40)
+    max_notes: int = Field(default=20, ge=1, le=100)
 
 
 class FeedComments(Input):
@@ -209,7 +208,7 @@ def install(app: FastAPI, root: Path, get_event_hub):
         if not topic or any(char in topic for char in ",，\r\n"):
             raise HTTPException(422, "每个发现任务请输入一个非空研究关键词，不要使用逗号分隔")
         payload = {**data.model_dump(), "topic": topic}
-        payload["interval"] = data.interval or random.randint(45, 75)
+        payload["interval"] = data.interval
         return service.submit("discover", f"发现 · {topic}", payload)
 
     @router.post("/collect")
@@ -231,7 +230,7 @@ def install(app: FastAPI, root: Path, get_event_hub):
             raise HTTPException(422, "请提供完整笔记链接，或从已有数据集选择内容")
         config["urls"] = list(dict.fromkeys(validate_link(url) for url in urls))
         config["max_notes"] = len(config["urls"])
-        config["interval"] = data.interval or random.randint(45, 75)
+        config["interval"] = data.interval
         return service.submit("collect", f"评论采集 · {data.topic}", config)
 
     @router.post("/analyze")
@@ -353,7 +352,7 @@ def install(app: FastAPI, root: Path, get_event_hub):
         topic = data.topic.strip()
         if not topic or any(char in topic for char in ",，\r\n"):
             raise HTTPException(422, "请输入一个非空主题，不要使用逗号分隔")
-        payload = {"topic": topic, "max_notes": data.max_notes, "interval": random.randint(45, 75)}
+        payload = {"topic": topic, "max_notes": data.max_notes}
         return service.submit("discover", f"发现 · {topic}", payload)
 
     @feed_router.post("/comments")
@@ -385,7 +384,6 @@ def install(app: FastAPI, root: Path, get_event_hub):
             "max_notes": 1,
             "max_comments": 20,
             "include_replies": True,
-            "interval": random.randint(45, 75),
         }
         return service.submit("collect", f"采评论 · {title[:20]}", config)
 
