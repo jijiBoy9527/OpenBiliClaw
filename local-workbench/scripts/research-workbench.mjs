@@ -4,9 +4,19 @@ import { join } from 'node:path';
 import { root } from './environment.mjs';
 
 const sourceFile = join(root, 'runtime', 'research-source.txt');
-const appRoot = existsSync(sourceFile) ? readFileSync(sourceFile, 'utf8').trim() : join(root, 'apps', 'OpenBiliClaw-research');
-// Reuse installed dependencies while isolated feature worktrees supply source/assets.
-const python = join(root, 'apps', 'OpenBiliClaw-research', '.venv', 'Scripts', 'python.exe');
+// 合并后仓库自带源码：没有 research-source.txt / apps 副本时，直接把仓库根当源码根。
+const hasInlineSource = existsSync(join(root, 'src', 'openbiliclaw', 'research', 'api.py'));
+const appRoot = existsSync(sourceFile)
+  ? readFileSync(sourceFile, 'utf8').trim()
+  : hasInlineSource
+    ? root
+    : join(root, 'apps', 'OpenBiliClaw-research');
+// 本机 worktree 复用 apps 下的 venv；新机器直接用仓库根 .venv。
+const python = [
+  join(appRoot, '.venv', 'Scripts', 'python.exe'),
+  join(root, 'apps', 'OpenBiliClaw-research', '.venv', 'Scripts', 'python.exe'),
+  join(root, '.venv', 'Scripts', 'python.exe'),
+].find((candidate) => existsSync(candidate)) || '';
 const base = 'http://127.0.0.1:8766';
 const pageUrl = `${base}/web/${process.argv.includes('--settings') ? '?settings=sources' : '#research'}`;
 async function status() {
@@ -56,7 +66,7 @@ try {
     process.exit(0);
   }
   if (!existing) {
-    if (!existsSync(python)) throw new Error('研究工作台环境缺失，请查看 apps/OpenBiliClaw-research/docs/modules/research.md。');
+    if (!existsSync(python)) throw new Error('研究工作台环境缺失：先按 local-workbench/SETUP.md 建好 .venv 并安装依赖。');
     const projectRoot = join(root,'home','.openbiliclaw');
     mkdirSync(projectRoot,{recursive:true});
     const configPath = join(projectRoot,'config.toml');

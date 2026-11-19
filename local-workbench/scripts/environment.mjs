@@ -1,9 +1,12 @@
-import { mkdirSync } from 'node:fs';
+import { existsSync, mkdirSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-export const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-export const node = join(root, 'runtime', 'node-v22.19.0-win-x64', 'node.exe');
+// scripts/ -> local-workbench/ -> 仓库根（工作台把代码仓当成工作区根）
+export const root = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
+// 优先用仓库自带的 Node；新机器没附带时退回当前 Node（要求 >= 22）。
+const bundledNode = join(root, 'runtime', 'node-v22.19.0-win-x64', 'node.exe');
+export const node = existsSync(bundledNode) ? bundledNode : process.execPath;
 export const cli = join(root, 'node_modules', '@jackwener', 'opencli', 'dist', 'src', 'main.js');
 export const daemon = join(root, 'node_modules', '@jackwener', 'opencli', 'dist', 'src', 'daemon.js');
 const home = join(root, 'home');
