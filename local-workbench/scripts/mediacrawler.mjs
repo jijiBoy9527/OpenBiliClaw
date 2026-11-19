@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process';
 import { appendFileSync, closeSync, existsSync, openSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { node, root } from './environment.mjs';
+import { node, root, venvPython } from './environment.mjs';
 
 const args = process.argv.slice(2);
 if (!args.length) {
@@ -10,7 +10,7 @@ if (!args.length) {
 }
 
 const project = join(root, 'MediaCrawler');
-const python = join(project, '.venv', 'Scripts', 'python.exe');
+const python = venvPython(project);
 const lock = join(root, '.cache', 'xhs-rate.lock');
 let locked = false;
 function progress(event) {

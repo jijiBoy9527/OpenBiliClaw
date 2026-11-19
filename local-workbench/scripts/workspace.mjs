@@ -1,7 +1,7 @@
-import { spawn, spawnSync } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import { closeSync, existsSync, mkdirSync, openSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { daemon, node, root } from './environment.mjs';
+import { chromeExecutable, daemon, node, processInfo, root } from './environment.mjs';
 
 const bridgeUrl = 'http://127.0.0.1:19825';
 const hotUrl = 'http://127.0.0.1:6688';
@@ -20,11 +20,8 @@ async function readJson(url) {
 
 function ownsProcess(pid, script) {
   if (!Number.isSafeInteger(pid) || pid <= 0) return false;
-  const result = spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command',
-    `[Console]::OutputEncoding=[System.Text.UTF8Encoding]::new(); Get-CimInstance Win32_Process -Filter 'ProcessId=${pid}' | Select-Object -ExpandProperty CommandLine`],
-  { encoding: 'utf8', windowsHide: true });
-  if (result.status !== 0) throw new Error(`无法确认进程归属：${result.stderr}`);
-  return result.stdout.toLowerCase().includes(script.toLowerCase());
+  const info = processInfo(pid);
+  return Boolean(info) && info.commandLine.toLowerCase().includes(script.toLowerCase());
 }
 
 async function launchService(script, logName, ready) {
@@ -84,7 +81,7 @@ async function openBrowser() {
     }));
   }
   const extension = join(root, 'browser', 'opencli-extension');
-  const browser = spawn(join(root, 'browser', 'chrome-win64', 'chrome.exe'), [
+  const browser = spawn(chromeExecutable(), [
     `--user-data-dir=${profile}`, `--disk-cache-dir=${join(root, '.cache', 'chrome')}`,
     '--disk-cache-size=268435456', '--media-cache-size=134217728',
     `--crash-dumps-dir=${join(root, '.cache', 'chrome-crashes')}`,

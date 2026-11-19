@@ -1,7 +1,7 @@
-import { spawn, spawnSync } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import { closeSync, existsSync, openSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { root } from './environment.mjs';
+import { isWindows, openUrl, processInfo, root, venvPython } from './environment.mjs';
 
 const sourceFile = join(root, 'runtime', 'research-source.txt');
 // 合并后仓库自带源码：没有 research-source.txt / apps 副本时，直接把仓库根当源码根。
@@ -13,9 +13,9 @@ const appRoot = existsSync(sourceFile)
     : join(root, 'apps', 'OpenBiliClaw-research');
 // 本机 worktree 复用 apps 下的 venv；新机器直接用仓库根 .venv。
 const python = [
-  join(appRoot, '.venv', 'Scripts', 'python.exe'),
-  join(root, 'apps', 'OpenBiliClaw-research', '.venv', 'Scripts', 'python.exe'),
-  join(root, '.venv', 'Scripts', 'python.exe'),
+  venvPython(appRoot),
+  venvPython(join(root, 'apps', 'OpenBiliClaw-research')),
+  venvPython(root),
 ].find((candidate) => existsSync(candidate)) || '';
 const base = 'http://127.0.0.1:8766';
 const pageUrl = `${base}/web/${process.argv.includes('--settings') ? '?settings=sources' : '#home'}`;
@@ -45,21 +45,16 @@ try {
     const jobs = await response.json();
     if (jobs.items.some(job => ['queued','running','stopping'].includes(job.state))) throw new Error('请先在 UI 中停止或等待全部任务结束，再关闭服务。');
     if (!Number.isSafeInteger(existing.pid) || existing.pid <= 0) throw new Error('服务 PID 无效，未停止。');
-    const check = spawnSync('powershell.exe',['-NoProfile','-NonInteractive','-Command',
-      `[Console]::OutputEncoding=[System.Text.UTF8Encoding]::new(); Get-CimInstance Win32_Process -Filter 'ProcessId=${existing.pid}' | Select-Object ExecutablePath,CommandLine,ParentProcessId | ConvertTo-Json -Compress`],
-      {encoding:'utf8',windowsHide:true});
-    if (check.status !== 0 || !check.stdout.trim()) throw new Error('无法确认服务进程归属，未停止。');
-    const info = JSON.parse(check.stdout.trim());
-    if (!info.CommandLine?.includes('openbiliclaw.research.api:create_app')) throw new Error('进程不属于本工作台，未停止。');
-    if (info.ExecutablePath?.toLowerCase() !== python.toLowerCase()) {
+    const info = processInfo(existing.pid);
+    if (!info) throw new Error('无法确认服务进程归属，未停止。');
+    if (!info.commandLine.includes('openbiliclaw.research.api:create_app')) throw new Error('进程不属于本工作台，未停止。');
+    // Linux/macOS 没有重定向器进程，命令行校验已足够；以下仅针对 Windows venv。
+    if (isWindows && info.executablePath.toLowerCase() !== python.toLowerCase()) {
       // Windows venv python.exe is a redirector: Uvicorn may run in its base-python child.
       // Verify the exact venv parent instead of trusting a generic python.exe child.
-      if (!Number.isSafeInteger(info.ParentProcessId) || info.ParentProcessId <= 0) throw new Error('无法确认虚拟环境父进程，未停止。');
-      const parent = spawnSync('powershell.exe',['-NoProfile','-NonInteractive','-Command',
-        `[Console]::OutputEncoding=[System.Text.UTF8Encoding]::new(); Get-CimInstance Win32_Process -Filter 'ProcessId=${info.ParentProcessId}' | Select-Object ExecutablePath,CommandLine | ConvertTo-Json -Compress`],
-        {encoding:'utf8',windowsHide:true});
-      const owner = parent.status === 0 && parent.stdout.trim() ? JSON.parse(parent.stdout.trim()) : null;
-      if (owner?.ExecutablePath?.toLowerCase() !== python.toLowerCase() || !owner.CommandLine?.includes('openbiliclaw.research.api:create_app')) throw new Error('虚拟环境归属不匹配，未停止。');
+      if (!Number.isSafeInteger(info.parentPid) || info.parentPid <= 0) throw new Error('无法确认虚拟环境父进程，未停止。');
+      const owner = processInfo(info.parentPid);
+      if (owner?.executablePath.toLowerCase() !== python.toLowerCase() || !owner.commandLine.includes('openbiliclaw.research.api:create_app')) throw new Error('虚拟环境归属不匹配，未停止。');
     }
     process.kill(existing.pid);
     console.log('研究工作台已停止，数据与浏览器保留。');
@@ -115,9 +110,7 @@ enabled = false
   console.log(`OpenBiliClaw 原生界面：${base}/web/#home`);
   console.log('登录统一在首页初始化清单、设置或研究页按钮，使用工作区 OpenBiliClaw 插件。研究模块无需 opencli。');
   if (!process.argv.includes('--no-open')) {
-    const browser = spawn('rundll32.exe',['url.dll,FileProtocolHandler',pageUrl],{detached:true,stdio:'ignore',windowsHide:true});
-    await new Promise((resolve,reject) => { browser.once('spawn',resolve); browser.once('error',reject); });
-    browser.unref();
+    await openUrl(pageUrl);
   }
 } catch (error) { console.error(error.message); process.exitCode = 1; }
 
