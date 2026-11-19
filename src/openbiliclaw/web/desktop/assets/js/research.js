@@ -49,8 +49,12 @@
       $('#jobs').innerHTML = jobs.length ? jobs.map(job => `<button class="chat-task-item ${job.id === state.current ? 'research-task-selected' : ''}" data-job="${escape(job.id)}" aria-pressed="${job.id === state.current}">
         <div class="chat-task-title-row">${kinds[job.kind] || escape(job.kind)} ${badge(job)}</div>
         <h3>${escape(job.title)}</h3><div class="video-meta">${escape(date(job.created_at))}<br>${job.counts.contents || 0} 篇内容 · ${job.counts.comments || 0} 条评论${job.counts.findings ? ` · ${job.counts.findings} 个发现` : ''}</div></button>`).join('') : '<p class="saved-empty">这里还没有数据。<br>新建研究，或导入已有样本。</p>';
-      document.getElementById('research-job-count').textContent = state.jobs.length;
-      document.getElementById('research-job-count').hidden = !state.jobs.length;
+      // 导航徽标不是所有构建都有；缺少时不能打断统计与记录渲染。
+      const jobCount = document.getElementById('research-job-count');
+      if (jobCount) {
+        jobCount.textContent = state.jobs.length;
+        jobCount.hidden = !state.jobs.length;
+      }
       $('#stat-jobs').textContent = state.jobs.length;
       $('#stat-contents').textContent = state.jobs.reduce((sum, job) => sum + (job.counts.contents || 0), 0).toLocaleString();
       $('#stat-comments').textContent = state.jobs.reduce((sum, job) => sum + (job.counts.comments || 0), 0).toLocaleString();
@@ -281,7 +285,8 @@
     await api('/status');
     window.OpenBiliClawResearch.enabled = true;
     document.documentElement.dataset.research = 'enabled';
-    // 研究页入口已从导航移除（首页内容流接管）；旧页面若仍存在只是不可达。
+    // 研究页入口已从导航移除：推荐与研究是同一条流水线的同一页（首页内容流接管）。
+    // 旧页面保留仅作兜底，不再提供任何跳转入口。
     const workbenchBtn = document.getElementById('researchWorkbenchBtn');
     if (workbenchBtn) workbenchBtn.hidden = false;
     setInterval(() => { if (!page.hidden && !document.hidden) void refresh(); },3000);
