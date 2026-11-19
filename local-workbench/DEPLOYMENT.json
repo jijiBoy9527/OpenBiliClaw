@@ -1,0 +1,122 @@
+{
+  "patch": "patches/opencli-2.0.3-xhs-filter.json",
+  "packages": {
+    "opencli": "2.0.3",
+    "dailyhot": "2.0.8"
+  },
+  "sample": "data/xiaohongshu/2026-11-11T09-08-34-039Z",
+  "deployedAtUtc": "2026-11-11T09:12:06.216086Z",
+  "note": "Workspace-controlled paths are on D; operating-system-managed writes are outside this guarantee.",
+  "sources": [
+    {
+      "url": "https://nodejs.org/dist/v22.19.0/node-v22.19.0-win-x64.zip",
+      "file": "node-v22.19.0-win-x64.zip",
+      "sha256": "ea3fad0e67a991d8477d8c01344b56e69c676ccb733f065b22436994b1253f86",
+      "component": "node",
+      "version": "22.19.0",
+      "verification": "SHA256 matched official SHASUMS256.txt; executable Authenticode Valid"
+    },
+    {
+      "url": "https://storage.googleapis.com/chrome-for-testing-public/157.0.8103.50/win64/chrome-win64.zip",
+      "file": "chrome-157.0.8103.50-win64.zip",
+      "sha256": "36088dd9c76c992f6e745fc20f94aca873f69c3331ce25ea3df36835cc4af73f",
+      "component": "chrome-for-testing",
+      "version": "157.0.8103.50",
+      "verification": "MD5 matched Google Storage x-goog-hash 9b682d5c30aea9cc73ab5b4392964640"
+    },
+    {
+      "url": "https://github.com/jackwener/opencli/releases/download/v2.0.3/opencli-extension-v1.0.27.zip",
+      "file": "opencli-extension-v1.0.27.zip",
+      "sha256": "8636d42a0fe44d7ba3b0603dbcd9581e8269ccbca950136d0dfc0ffc39a8a213",
+      "component": "opencli-extension",
+      "version": "1.0.27",
+      "verification": "Official HTTPS release; SHA256 recorded locally, no independent upstream digest checked"
+    }
+  ],
+  "workspace": "D:\\抓取",
+  "liveResult": {
+    "cleanup": {
+      "installationArchivesRetained": true,
+      "reason": "Execution policy rejected automatic deletion."
+    },
+    "xiaohongshu": {
+      "notes": 3,
+      "sort": "most-liked",
+      "keyword": "家居收纳",
+      "publishTime": "week",
+      "officialGlobalHotList": false,
+      "topLevelComments": 5,
+      "replies": 33
+    },
+    "dailyhot": {
+      "reason": "Response is HTTP 200 but title is absent and URL contains undefined; not treated as valid hot content.",
+      "routes": 56,
+      "baiduContentValid": false,
+      "serviceReady": true
+    }
+  },
+  "tuinaResearch": {
+    "actualMinGapSeconds": 64.009,
+    "searches": 3,
+    "minGapSeconds": 60,
+    "uniqueNotes": 9,
+    "maxGapSeconds": 90,
+    "guard": "scripts/xhs-client.mjs",
+    "maxPer24Hours": 40,
+    "firstScreenOnly": true,
+    "terms": 15,
+    "actualMaxGapSeconds": 89.002,
+    "details": 3,
+    "output": "D:\\抓取\\data\\xiaohongshu\\research-2026-11-11T09-23-30-542Z",
+    "maxPerHour": 12,
+    "automaticRetry": false,
+    "comments": {
+      "status": "completed",
+      "collectedAt": "2026-11-11T09:47:44.278Z",
+      "notes": [
+        {
+          "noteId": "64f0613e000000001e00da3f",
+          "title": "颈椎病10级患者强烈推荐！肩颈一遍就舒服🙏",
+          "topLevel": 5,
+          "replies": 14
+        },
+        {
+          "noteId": "65c24f8b000000002d003172",
+          "title": "成都最好的按摩推拿店！！！！",
+          "topLevel": 5,
+          "replies": 11
+        },
+        {
+          "noteId": "68d3843e00000000130052cc",
+          "title": "长期低头办公，肩膀硬得像石头？",
+          "topLevel": 5,
+          "replies": 6
+        }
+      ],
+      "topLevel": 15,
+      "replies": 31,
+      "commandCount": 3,
+      "commandCompletionToNextStartSeconds": [
+        63.003,
+        66.01
+      ],
+      "scope": {
+        "maxTopLevel": 5,
+        "maxExpansionClicksPerNote": 2,
+        "expansionGapSeconds": [
+          12,
+          15
+        ],
+        "autoScroll": false,
+        "allComments": false,
+        "allReplies": false
+      },
+      "note": "间隔为业务命令完成到下一条开始；不是原始HTTP计数。未追完评论或楼中楼。"
+    }
+  },
+  "patches": [
+    "patches/opencli-2.0.3-xhs-filter.json",
+    "patches/opencli-2.0.3-xhs-no-retry.json",
+    "patches/opencli-2.0.3-xhs-comments.json"
+  ]
+}

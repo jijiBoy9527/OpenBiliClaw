@@ -1,0 +1,28 @@
+{
+  "description": "修复筛选面板关闭后的校验；筛选变化间隔12秒；只读首屏、不自动换页重试。",
+  "file": "node_modules/@jackwener/opencli/clis/xiaohongshu/search.js",
+  "originalSha256": "ece0bf18753f04f30f96d3d62fef1aa9dbe53925b1ef6d1bc405aaa6db88cb14",
+  "patchedSha256": "30b9e3296e59e466af6ce882a63500efe72a386c5fdc8670573d28a8be3341d1",
+  "replacements": [
+    {
+      "before": "            const currentPanels = panels();\n            if (currentPanels.length === 1) {\n              found = findOption(currentPanels[0], request);\n              if (found.status === 'ok' && isActive(found.option)) {\n                becameActive = true;\n                break;\n              }\n",
+      "after": "            // AI search closes its v-if panel when a filter is selected.\n            // Reopen the real panel before verifying the selected option.\n            const currentPanel = await openPanel();\n            if (currentPanel.status !== 'ok') return currentPanel;\n            found = findOption(currentPanel.panel, request);\n            if (found.status === 'ok' && isActive(found.option)) {\n              becameActive = true;\n              break;\n"
+    },
+    {
+      "before": "          const finalPanels = panels();\n          const finalFound = finalPanels.length === 1 ? findOption(finalPanels[0], request) : null;",
+      "after": "          const finalPanel = await openPanel();\n          if (finalPanel.status !== 'ok') return finalPanel;\n          const finalFound = findOption(finalPanel.panel, request);"
+    },
+    {
+      "before": "        maxRounds: 12 + Math.ceil((limit - 1) * 48 / 99),",
+      "after": "        maxRounds: 1,"
+    },
+    {
+      "before": "          const clickedAt = Date.now();",
+      "after": "          // Avoid issuing consecutive filter requests in the same burst.\n          await sleep(12000);\n          const clickedAt = Date.now();"
+    },
+    {
+      "before": "                await replaceCollapsedTab(page, EXPLORE_URL);\n                await openSearchResults(page, kwargs.query);\n                harvest = await collectSearchHarvest(page, limit, requestedFilters);\n                if (isCollapsedRender(harvest.diag)) {\n                    throw new CommandExecutionError(\n                        'Xiaohongshu search masonry remained collapsed after one fresh-tab recovery.',\n                        'Retry later or use a different logged-in browser session.',\n                    );\n                }",
+      "after": "                throw new CommandExecutionError('Xiaohongshu search layout collapsed; stopped without automatic retry.');"
+    }
+  ]
+}

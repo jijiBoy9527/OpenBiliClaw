@@ -1,0 +1,12 @@
+{
+  "originalSha256": "6e7c15a8a27de78a45fbe01d206bbbd43fab23bd9aa4cf39c900bf6c838c7242",
+  "patchedSha256": "e729be193b60f46262809ddea76be4526498ec8f61bdca841d5f949a755dc561",
+  "file": "node_modules/@jackwener/opencli/clis/xiaohongshu/risk-control.js",
+  "replacements": [
+    {
+      "after": "    retryOnBlock = false,",
+      "before": "    retryOnBlock = true,"
+    }
+  ],
+  "description": "本地采集遇到访问限制立即失败，关闭官方详情辅助函数的默认冷却重试。"
+}

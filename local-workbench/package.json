@@ -1,0 +1,11 @@
+{
+  "name": "local-hot-content-workspace",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Workspace-local OpenCLI and DailyHotApi deployment",
+  "dependencies": {
+    "@jackwener/opencli": "2.0.3",
+    "dailyhot-api": "2.0.8"
+  }
+}
