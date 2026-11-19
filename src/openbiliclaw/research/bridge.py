@@ -69,6 +69,8 @@ def _content_to_item(content: dict[str, Any], topic: str) -> Any:
         author_name=str(content.get("author_name") or ""),
         cover_url=str(content.get("cover_url") or ""),
         like_count=_coerce_int(content.get("likes")),
+        favorite_count=_coerce_int(content.get("favorite_count")),
+        share_count=_coerce_int(content.get("share_count")),
         comment_count=_coerce_int(content.get("reported_comment_count")),
         tags=content.get("tags") or [],
         published_at=_published_iso(content.get("published_at_raw")),

@@ -58,6 +58,8 @@ def _content_item(content: dict[str, Any], job: dict[str, Any]) -> dict[str, Any
         "author": str(content.get("author_name") or ""),
         "cover_url": str(content.get("cover_url") or ""),
         "likes": int(content.get("likes") or 0),
+        "favorite_count": int(content.get("favorite_count") or 0),
+        "share_count": int(content.get("share_count") or 0),
         "reported_comment_count": comment_count,
         "tags": content.get("tags") or [],
         "topic": str(job.get("config", {}).get("topic") or ""),

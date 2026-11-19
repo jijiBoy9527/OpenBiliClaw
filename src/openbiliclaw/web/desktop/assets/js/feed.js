@@ -8,7 +8,7 @@
  */
 (() => {
   const BASE = "/api/feed";
-  const state = { items: [], busy: false, pollTimer: null, openId: null };
+  const state = { items: [], busy: false, pollTimer: null, openId: null, jobId: null, topic: "" };
 
   const $ = (sel) => document.querySelector(sel);
 
@@ -34,11 +34,66 @@
     }[char]));
   }
 
-  function setStatus(text) {
-    const node = $("#feedStatus");
-    if (node) node.textContent = text || "";
+  // 失败信息里如果只是"未收到小红书登录态"，用户不知道该去哪里登录。
+  // 这里把可点的登录入口直接放进状态行，点开就是工作区那个登录窗口。
+  function needsLogin(text) {
+    return /登录态|未登录|插件未连接|请连接/.test(String(text || ""));
   }
 
+  function setStatus(text, options = {}) {
+    const node = $("#feedStatus");
+    if (!node) return;
+    node.textContent = text || "";
+    if (!text || !options.login) return;
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "pill-btn small";
+    button.textContent = "打开小红书登录";
+    button.addEventListener("click", (event) => {
+      event.preventDefault();
+      if (typeof window.__obcOpenXhsLogin === "function") {
+        window.__obcOpenXhsLogin();
+      } else {
+        setStatus("登录入口暂不可用：请刷新页面后重试。");
+      }
+    });
+    node.append(" ", button);
+  }
+
+  // 主题内容与推荐内容必须是同一张卡片：同样的点赞/评论/收藏统计、反馈按钮、
+  // 收藏 / 稍后再看 / 聊一聊。研究记录里只有 content_id，这里映射成推荐卡的字段。
+  function toRecommendationItem(item) {
+    const contentId = String(item.content_id || "");
+    const itemKey = contentId ? `xiaohongshu:${contentId}` : "";
+    const summary = item.summary_b || item.summary || "";
+    return {
+      id: null,
+      bvid: itemKey,
+      item_key: itemKey,
+      content_id: contentId,
+      content_url: item.url || "",
+      title: item.title || "无标题",
+      up: item.author || "",
+      up_name: item.author || "",
+      platform: "xiaohongshu",
+      source_platform: "xiaohongshu",
+      cover_url: item.cover_url || "",
+      like_count: Number(item.likes || 0),
+      favorite_count: Number(item.favorite_count || 0),
+      share_count: Number(item.share_count || 0),
+      comment_count: Number(item.reported_comment_count || 0),
+      view_count: 0,
+      topic_label: item.topic || "",
+      reason: summary,
+      expression: summary,
+      content_type: "note",
+      published_at: "",
+      duration: 0,
+      source_rank: 0,
+    };
+  }
+
+  // 兜底：旧构建没有卡片工厂时，用简化卡片，功能不能断。
   function cardMarkup(item) {
     const cover = item.cover_url
       ? `<img src="${escapeHtml(item.cover_url)}" alt="" loading="lazy" referrerpolicy="no-referrer">`
@@ -60,31 +115,60 @@
       </article>`;
   }
 
+  function addCommentsButton(card, contentId) {
+    const actions = card.querySelector(".card-actions");
+    if (!actions) return;
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "pill-btn small";
+    button.textContent = "看评论";
+    button.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      openDetail(contentId);
+    });
+    actions.appendChild(button);
+  }
+
   function render() {
     const grid = $("#videoGrid");
     if (!grid) return;
-    grid.querySelectorAll(".feed-video-card").forEach((node) => node.remove());
-    if (!state.items.length) return;
-    const template = document.createElement("div");
-    template.innerHTML = state.items.map(cardMarkup).join("");
-    const cards = [...template.children];
-    cards.forEach((card) => {
+    grid.querySelectorAll("[data-feed-id]").forEach((node) => node.remove());
+    if (!state.items.length) {
+      // 没有主题内容时也必须给推荐卡片挂「看评论」：否则用户会看到功能凭空消失。
+      enhanceRecommendationCards();
+      return;
+    }
+    const build = typeof window.__obcBuildRecommendationCard === "function";
+    for (const item of state.items) {
+      const contentId = String(item.content_id || "");
+      if (build) {
+        const card = window.__obcBuildRecommendationCard(toRecommendationItem(item));
+        card.dataset.feedId = contentId;
+        addCommentsButton(card, contentId);
+        grid.appendChild(card);
+        continue;
+      }
+      const template = document.createElement("div");
+      template.innerHTML = cardMarkup(item);
+      const card = template.firstElementChild;
+      if (!card) continue;
       card.querySelector('[data-feed-action="comments"]')?.addEventListener("click", (event) => {
         event.stopPropagation();
-        openDetail(card.dataset.feedId);
+        openDetail(contentId);
       });
       card.addEventListener("click", (event) => {
         event.stopPropagation();
-        openDetail(card.dataset.feedId);
+        openDetail(contentId);
       });
       grid.appendChild(card);
-    });
+    }
     enhanceRecommendationCards();
   }
 
   // 推荐流里的小红书卡片也能「看评论」：复用同一套采集与详情弹层。
   function enhanceRecommendationCards() {
-    document.querySelectorAll("#videoGrid .video-card:not(.feed-video-card)").forEach((card) => {
+    document.querySelectorAll("#videoGrid .video-card:not([data-feed-id])").forEach((card) => {
       if (card.dataset.feedEnhanced === "1") return;
       const cover = card.querySelector("a.cover[href]");
       const platform = (card.querySelector(".platform")?.dataset.platform || "").toLowerCase();
@@ -149,34 +233,154 @@
     }
   }
 
+  // 进行中的主题任务要跨刷新保留：以前只把状态放在内存里，刷新后既看不到进度，
+  // 也看不到失败原因，用户只能看到一句"正在找"然后永远没有下文。
+  const PENDING_KEY = "obc.feed.discover";
+  const RESULT_KEY = "obc.feed.lastResult";
+  const POLL_INTERVAL = 5000;
+  const POLL_MAX_ROUNDS = 120; // 10 分钟；超过就交给后台，不再假装还在找。
+
+  function rememberResult(text) {
+    try {
+      localStorage.setItem(RESULT_KEY, JSON.stringify({ text, topic: state.topic || "", at: Date.now() }));
+    } catch (_) {}
+  }
+
+  function restoreResult() {
+    try {
+      const data = JSON.parse(localStorage.getItem(RESULT_KEY) || "null");
+      if (!data?.text) return;
+      if (Date.now() - Number(data.at || 0) > 24 * 3600 * 1000) return;
+      // 主题一并恢复：登录接通后可以直接自动重试，不用用户再输一遍。
+      if (data.topic) state.topic = data.topic;
+      setStatus(data.text, { login: needsLogin(data.text) });
+    } catch (_) {}
+  }
+
+  // 终态结论既写页面也写本地：刷新后不该看到一片空白。
+  function finish(text) {
+    setStatus(text, { login: needsLogin(text) });
+    rememberResult(text);
+  }
+
+  function rememberJob(job, topic) {
+    try {
+      const id = String(job?.id || "");
+      if (!id) return;
+      localStorage.setItem(PENDING_KEY, JSON.stringify({ id, topic, at: Date.now() }));
+    } catch (_) {}
+  }
+
+  function forgetJob() {
+    try { localStorage.removeItem(PENDING_KEY); } catch (_) {}
+  }
+
+  async function fetchJob(jobId) {
+    const response = await fetch(`/api/research/jobs/${encodeURIComponent(jobId)}`, {
+      headers: { "X-Research-Request": "1" },
+    });
+    if (response.status === 404) return null;
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    return response.json();
+  }
+
   async function startDiscover(topic) {
     if (state.busy) return;
     state.busy = true;
+    state.topic = topic;
     setStatus(`正在找「${topic}」相关内容…（后台串行，约 1–3 分钟）`);
     try {
-      await api("/discover", { method: "POST", body: JSON.stringify({ topic, max_notes: 20 }) });
-      pollUntilContent(0);
+      const job = await api("/discover", { method: "POST", body: JSON.stringify({ topic, max_notes: 20 }) });
+      state.jobId = job?.id || null;
+      rememberJob(job, topic);
+      pollJob(state.jobId, 0);
     } catch (error) {
-      setStatus(`启动失败：${error.message}`);
+      finish(`启动失败：${error.message}`);
       state.busy = false;
     }
   }
 
-  function pollUntilContent(round) {
-    if (round > 60) {
-      state.busy = false;
-      setStatus("没有等到底；任务可能还在后台跑，稍后刷新即可。");
+  function jobStateLabel(job) {
+    return STATE_LABEL[job?.state] || job?.state || "未知状态";
+  }
+
+  // 轮询任务本身，而不是只轮询"有没有内容"：任务失败时立刻说清楚原因。
+  function pollJob(jobId, round) {
+    if (!jobId) { state.busy = false; return; }
+    state.pollTimer = window.setTimeout(async () => {
+      let job = null;
+      let jobError = "";
+      try {
+        job = await fetchJob(jobId);
+      } catch (error) {
+        jobError = error.message;
+      }
+      await loadFeed();
+      if (job && TERMINAL.has(job.state)) {
+        state.busy = false;
+        forgetJob();
+        state.jobId = null;
+        const suffix = job.message ? `：${job.message}` : "";
+        if (job.state === "completed" || job.state === "partial") {
+          finish(state.items.length
+            ? `已补充 ${state.items.length} 条（任务${jobStateLabel(job)}${suffix}）。`
+            : `任务${jobStateLabel(job)}，但没有内容入库${suffix}。`);
+        } else {
+          finish(`找「${state.topic || ""}」${jobStateLabel(job)}${suffix}。没有内容入库，可以重试。`);
+        }
+        return;
+      }
+      if (job) {
+        // 任务进行中要有可刷新的进度，否则前端一直显示开始时那一句，像卡死。
+        const collected = Number(job?.counts?.contents || 0);
+        const started = job.created_at ? new Date(job.created_at).getTime() : Date.now();
+        const minutes = Math.max(0, Math.round((Date.now() - started) / 60000));
+        setStatus(`正在找「${state.topic || ""}」…任务${jobStateLabel(job)}：已入库 ${collected} 篇 · 已跑 ${minutes} 分钟${job.message ? `；${job.message}` : ""}`);
+      } else if (jobError) {
+        setStatus(`读取任务状态失败：${jobError}（继续等待）`);
+      }
+      if (round >= POLL_MAX_ROUNDS) {
+        state.busy = false;
+        forgetJob();
+        finish("超过 10 分钟仍未完成；任务可能还在后台跑，稍后刷新即可看到结果。");
+        return;
+      }
+      pollJob(jobId, round + 1);
+    }, POLL_INTERVAL);
+  }
+
+  // 页面刷新后恢复上次未结束的主题任务：进度和失败原因都不应该丢。
+  async function resumePending() {
+    let pending = null;
+    try {
+      pending = JSON.parse(localStorage.getItem(PENDING_KEY) || "null");
+    } catch (_) {}
+    if (!pending?.id) {
+      restoreResult();
       return;
     }
-    state.pollTimer = window.setTimeout(async () => {
-      await loadFeed();
-      if (state.items.length) {
-        state.busy = false;
-        setStatus(`已补充 ${state.items.length} 条。`);
+    state.topic = pending.topic || state.topic;
+    let job = null;
+    try {
+      job = await fetchJob(pending.id);
+    } catch (_) {
+      return; // 服务暂时不可达：保留记录，下次刷新再试。
+    }
+    if (!job) { forgetJob(); restoreResult(); return; }
+    if (TERMINAL.has(job.state)) {
+      forgetJob();
+      if (job.state === "completed" || job.state === "partial") {
+        await loadFeed();
+        if (state.items.length) finish(`上次「${state.topic}」已补充 ${state.items.length} 条。`);
       } else {
-        pollUntilContent(round + 1);
+        finish(`上次找「${state.topic}」${jobStateLabel(job)}${job.message ? `：${job.message}` : ""}。没有内容入库，可以重试。`);
       }
-    }, 5000);
+      return;
+    }
+    state.busy = true;
+    state.jobId = job.id;
+    setStatus(`「${state.topic}」仍在后台找…任务${jobStateLabel(job)}${job.message ? `：${job.message}` : ""}`);
+    pollJob(job.id, 0);
   }
 
   function ensureOverlay() {
@@ -420,7 +624,15 @@
     });
     $("#feedPurge")?.addEventListener("click", () => purgeFeed());
     window.__obcFeedRender = render;
-    loadFeed();
+    // 登录接通后自动把上一次没找成的主题重跑一遍，用户不用再点一次。
+    window.addEventListener("obc:xhs-login-verified", () => {
+      const topic = state.topic || "";
+      if (!topic) { setStatus("小红书已连接，可以输入主题开始找。"); return; }
+      if (state.busy) return;
+      setStatus(`小红书已连接，重新找「${topic}」…`);
+      startDiscover(topic);
+    });
+    void loadFeed().then(() => resumePending());
   }
 
   async function purgeFeed() {

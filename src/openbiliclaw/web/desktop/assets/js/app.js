@@ -2257,6 +2257,8 @@
           if (result?.outcome === "verified" && !result.replayed) {
             updateXhsLoginMessage("已连接小红书插件，下一步可开始初始化。", "success");
             showToast("小红书已连接，可以开始初始化");
+            // 首页主题流水线监听这个事件：登录接通后自动重试上次没找成的主题。
+            window.dispatchEvent(new CustomEvent("obc:xhs-login-verified"));
             void renderSourcesStatus();
             return;
           }
@@ -2283,6 +2285,10 @@
         });
       }
     }
+
+    // 首页主题流水线（feed.js）的失败提示复用同一个登录流程：
+    // 打开工作区登录窗口 → 等待插件回报 → 验证通过后派发 obc:xhs-login-verified。
+    window.__obcOpenXhsLogin = openXhsLogin;
 
     function buildInitChecklist(status, selected = null) {
       const prereq = status?.prerequisites || {};
@@ -5398,26 +5404,13 @@ ${cardFeedbackBarHtml()}`;
           favBtn.title = saved ? "取消收藏" : "收藏";
         });
       }
-      if (String(item.platform || "").toLowerCase() === "xhs") {
-        const researchButton = document.createElement("button");
-        researchButton.type = "button";
-        researchButton.className = "small-btn research-comment-action";
-        researchButton.textContent = "研究评论 →";
-        researchButton.addEventListener("click", (event) => {
-          event.preventDefault();
-          event.stopPropagation();
-          if (!window.OpenBiliClawResearch?.enabled) {
-            showToast("研究工作台未启用，请通过工作区 start.cmd 启动。");
-            return;
-          }
-          const link = contentUrl(item);
-          if (!link) { showToast("没有可采集链接，请到研究工作台搜索该主题。"); return; }
-          window.OpenBiliClawResearch.open(link);
-        });
-        card.appendChild(researchButton);
-      }
+      // 推荐与研究是同一条流水线的同一个页面：采评论只在首页弹层里做
+      // （feed.js 的「看评论」），这里不再放跳转到独立研究页的入口。
       return card;
     }
+
+    // 首页主题流水线复用同一张推荐卡片：同样的统计、反馈、收藏/稍后再看/聊一聊。
+    window.__obcBuildRecommendationCard = (item) => createRecommendationCard(item, recommendationCardHtml(item, 0));
 
     // 按 recommendation key 做增量对账，而不是 grid.replaceChildren(...)。整表重建
     // 会把用户正在看的卡片全部销毁：浏览器丢掉滚动锚点（列表跳动）、首屏之外的

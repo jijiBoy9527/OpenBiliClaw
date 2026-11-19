@@ -189,6 +189,8 @@ class Store:
                         "author_name": str(raw.get("nickname") or ""),
                         "published_at_raw": raw.get("time"), "source_keyword": raw.get("source_keyword", ""),
                         "likes": count_value(raw.get("liked_count")),
+                        "favorite_count": count_value(raw.get("collected_count")),
+                        "share_count": count_value(raw.get("share_count")),
                         "reported_comment_count": count_value(raw.get("comment_count")),
                         "collected_at": timestamp,
                         "video_transcribed": False,
