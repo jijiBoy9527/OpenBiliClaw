@@ -18,7 +18,7 @@ const python = [
   join(root, '.venv', 'Scripts', 'python.exe'),
 ].find((candidate) => existsSync(candidate)) || '';
 const base = 'http://127.0.0.1:8766';
-const pageUrl = `${base}/web/${process.argv.includes('--settings') ? '?settings=sources' : '#research'}`;
+const pageUrl = `${base}/web/${process.argv.includes('--settings') ? '?settings=sources' : '#home'}`;
 async function status() {
   try {
     const response = await fetch(`${base}/api/research/status`, { headers:{'X-OBC-Auth':'1'}, signal: AbortSignal.timeout(1500) });
@@ -35,7 +35,7 @@ async function status() {
 try {
   const existing = await status();
   if (process.argv.includes('--status')) {
-    console.log(existing ? `研究工作台已运行：${base}/web/#research` : '研究工作台未运行。');
+    console.log(existing ? `研究工作台已运行：${base}/web/#home` : '研究工作台未运行。');
     process.exit(0);
   }
   if (process.argv.includes('--stop')) {
@@ -112,7 +112,7 @@ enabled = false
     }
     if (!ready) throw new Error('工作台尚未就绪，请查看日志；不要重复启动。');
   }
-  console.log(`OpenBiliClaw 原生界面：${base}/web/#research`);
+  console.log(`OpenBiliClaw 原生界面：${base}/web/#home`);
   console.log('登录统一在首页初始化清单、设置或研究页按钮，使用工作区 OpenBiliClaw 插件。研究模块无需 opencli。');
   if (!process.argv.includes('--no-open')) {
     const browser = spawn('rundll32.exe',['url.dll,FileProtocolHandler',pageUrl],{detached:true,stdio:'ignore',windowsHide:true});
