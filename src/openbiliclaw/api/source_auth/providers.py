@@ -519,11 +519,11 @@ def auth_bilibili(ctx: SourceAuthContext) -> SourceAuthContract:
 
 
 def auth_xiaohongshu(ctx: SourceAuthContext) -> SourceAuthContract:
-    """小红书: the extension reports a login bool; the backend stores no cookie.
+    """小红书: the extension reports a login bool; no cookie is persisted.
 
-    Fetching is client-side, so the backend never stores or replays the raw
-    ``web_session`` cookie — which is also why it can never verify this source
-    itself (spec D2). ``xsec_token`` content rows are a secondary hint, never
+    Platform discovery is client-side. Optional local research obtains a
+    one-shot memory-only session for MediaCrawler, not a persistent credential
+    for this login heartbeat. ``xsec_token`` content rows are a secondary hint, never
     the login gate: a fresh account is logged in with zero tokenized rows.
     """
     stored, when, fresh = _login_heartbeat(
@@ -545,6 +545,10 @@ def auth_xiaohongshu(ctx: SourceAuthContext) -> SourceAuthContract:
             tokens = 0
 
     credential: Credential = "present" if stored else "none"
+    readiness: CapabilityReadiness = (
+        "ready" if stored and fresh else "stale" if stored and when
+        else "login_required" if when else "unverified"
+    )
     common: dict[str, Any] = {
         "auth_required": True,
         "credential": credential,
@@ -554,6 +558,10 @@ def auth_xiaohongshu(ctx: SourceAuthContext) -> SourceAuthContract:
         # The verify action asks the extension to re-report, which is useful
         # precisely when we have never heard from it.
         "can_verify_now": True,
+        "capabilities": {
+            key: SourceCapabilityAuth(mode="login-required", readiness=readiness)
+            for key in ("profile", "bootstrap")
+        },
     }
 
     if not when:

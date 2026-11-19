@@ -1035,3 +1035,20 @@ TikTok 封面：`image_cache → DoH 解析/公网地址验证 → IP 固定（�
 中继使用独立部署的 `sponsored_relay.py`，不是用户私有 API 的公开代理。服务端只接收已签任务契约；客户端沿用工具解析、模型切换、流中断和向量校验。官方中继地址尚未配置时，发行包保留本地兼容模式；地址验证后切换 `runtime/relay_release.py`，打包门禁拒绝混入旧 Key SDK。历史元信息修复从同平台同 ID 的已存证据补空字段，冲突和无证据字段保持未知。[部署与威胁边界](sponsored-relay.md)。
 
 请求预算数据流（2026-11-08，待发布）：`llm.timeout → LLM 注册表 / 免费适配器 → Rust IPC timeout_ms → HTTP 剩余预算`。初始化根据注册表预算计算阶段期限；组件边界和签名模型输入不变。
+# 本地研究工作台扩展（2026-11-17，未发布）
+
+```text
+首页 / 设置 / 研究登录 → /api/research/login → 统一 Chrome profile + OpenBiliClaw 插件
+                                                   ↓ 登录布尔心跳 → 初始化准入
+推荐 URL / 主题 → 原生 /web/#research → /api/research → SQLite durable queue
+                                             ↓
+                           MediaCrawler 子进程 ← OpenBiliClaw 插件一次性登录态（不落盘）
+                                             ↓
+                          正文/评论/回复 JSONL + 完整性事件
+                                             ↓
+                         数据集快照 → ZIP(JSONL/CSV/manifest)
+                                             ↓ 用户同意
+                           现有模型 provider → findings(证据 ID)
+```
+
+本机 Windows 启动原生完整 API 与桌面 UI，不再提供独立轻量页面；默认不配置推荐模型，关闭平台源、调度和 Blue Fish，按需在原生设置配置。研究模块独立于推荐模型注册表，可在 degraded 状态使用。接口、字段、状态、许可边界见 [研究模块](modules/research.md)。

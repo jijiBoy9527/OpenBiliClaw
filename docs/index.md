@@ -1,5 +1,7 @@
 # 📖 OpenBiliClaw 文档导航
 
+- [本地研究数据工作台](modules/research.md)：UI 操作、独立采集、结构化导出、可选分析及部署边界（未发布改造）。
+
 - [动态来源主线合并验证（2026-11-08）](testing/2026-11-08-dynamic-sources-main-merge.md)：后端／App 合并兼容修复、回归与工作区保护。
 
 - [免费 Provider 合并验收（2026-11-07—08）](testing/2026-11-07-unified-providers-merge.md)：main 集成检查、Embedding 现有边界与安装包发布状态。

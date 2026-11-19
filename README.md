@@ -1,3 +1,11 @@
+> **本地研究改造（未发布）**：新增 [研究数据工作台](docs/modules/research.md)。当前工作区双击 `D:\抓取\start.cmd` 即可搜索候选、采集评论、查看数据和导出 JSONL/CSV。可选复用模型分析，不启用自动公开互动。
+>
+> `首页/设置/研究登录按钮 → 统一浏览器 + OpenBiliClaw 插件 → 心跳验证 → 初始化准入/研究会话`
+>
+> `主题/推荐链接 → 原生桌面「研究数据」 → MediaCrawler 独立采集（复用 OpenBiliClaw 插件的一次性登录态） → SQLite 数据集 → ZIP / 可选模型 findings`
+>
+> 基于 OpenBiliClaw 原生 `/web/` 应用改造，侧边导航新增「研究数据」，复用原主题、组件与设置，不再提供独立 UI。首次不配置推荐模型、不自动采集，推荐/画像需自行配置后启用。详见上述模块文档。
+
 <div align="center">
 
 # 🦀 OpenBiliClaw

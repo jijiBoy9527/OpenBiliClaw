@@ -241,8 +241,8 @@ CREDENTIAL_SPECS: dict[str, CredentialSpec] = {
         slug="xiaohongshu",
         kinds=("login_state", "token"),
         unverified_reason=(
-            "小红书只上报一个登录布尔值，后端一个字节的 Cookie 都不保存，"
-            "架构上无从校验；结论完全取决于浏览器插件上报的内容。"
+            "平台源登录状态由浏览器插件上报；本地研究按任务临时获取会话，不持久保存 Cookie。"
+            "这里的登录结论不是研究 HTTP 访问已验证成功。"
         ),
         # Not ``token_input`` even though ``kinds`` accepts ``token``: the
         # xsec_token values are harvested by the extension while the user
@@ -252,8 +252,8 @@ CREDENTIAL_SPECS: dict[str, CredentialSpec] = {
         form_label="小红书登录态",
         login_url="https://www.xiaohongshu.com/",
         help_text=(
-            "后端不保存小红书 Cookie，登录态由浏览器插件上报。要修就去浏览器登录小红书，"
-            "插件会自动上报；这里没有可粘贴的凭据。"
+            "在安装 OpenBiliClaw 插件的同一浏览器登录小红书，插件会自动上报。"
+            "本地研究也复用此插件，按任务临时传递会话，不保存 Cookie；不需要第二套 opencli 插件。"
         ),
     ),
     "zhihu": CredentialSpec(

@@ -1,5 +1,9 @@
 # OpenBiliClaw install instructions (for AI agents)
 
+## Local research workbench fork
+
+The Windows-only research launcher installs the full project (`pip install -e .`) in its worktree venv and uses an already prepared, isolated MediaCrawler installation. It starts the original API and `/web/#research` desktop UI, not a standalone page. Initial config disables sources and scheduler, with no recommendation model chain; the launcher disables Blue Fish and never overwrites existing config. Research works independently while the original UI reports an unconfigured recommendation registry. Follow [research setup](modules/research.md#启动与依赖), keeping caches and data in the workspace. This mode is not included in upstream packaged installers.
+
 ## Phone QR connections (2026-10-26)
 
 Desktop packages and AI / script installs default to `0.0.0.0`; preserve a user's explicit loopback setting. The local `Health URL` is intentionally loopback and must not be encoded as a phone link. Open Desktop Web / extension **手机版** and choose LAN, Tailscale or public/custom access. Both surfaces refresh `/api/qr-info` each time; missing detection never produces a loopback QR. The companion Android / iOS App now offers **扫码连接** to save the endpoint and connection mode; a phone camera opens the same `/m/` URL. System Tailscale uses direct App transport; an embedded helper adds `?obc_connection=tailscale` for the App's built-in transport. First-time enrollment and existing password login are still required. No new installation dependency or config field. For Docker, enter a reachable host URL with its published port. See [connection protocol](mobile-connection.md).
@@ -1096,3 +1100,5 @@ macOS 官方包下载在 CDN 支持强 ETag 与字节范围时使用四段并行
 ### 免费中继发行模式
 
 默认兼容模式继续纳入固定验签的 Rust SDK。已部署并验收的官方中继地址写入发行默认后，安装包/镜像不携带上游 Key SDK，首次使用创建独立设备身份。手工配置 `llm.sponsored.relay_url` 仅改变调用路由，不会移除旧包中的凭据；生产迁移必须发布不含 Key 的包并由供应商撤销旧 Key。[部署顺序及限制](sponsored-relay.md)。
+
+本地研究登录统一（2026-11-18）：首页或“设置 → 平台源 → 小红书”点击登录即可启动工作区 Chrome for Testing，并自动加载本分支构建的 OpenBiliClaw 插件；不读取日常 Chrome/Edge profile，也不依赖 opencli。当前仅工作区 Windows 本机部署，未发布至商店、Docker 或桌面安装器。

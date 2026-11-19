@@ -1,3 +1,11 @@
+> **Local research fork (unreleased)**: [Research workbench](docs/modules/research.md) adds a local UI for candidate discovery, comment collection, dataset inspection and JSONL/CSV export. The workspace entry is `D:\抓取\start.cmd`; model analysis is optional and public interactions are not enabled.
+>
+> `Home/settings/research login action → managed browser + OpenBiliClaw extension → heartbeat verification → init admission/research session`
+>
+> `Topic/recommendation URL → OpenBiliClaw desktop Research datasets → isolated MediaCrawler (one-shot OpenBiliClaw extension session) → SQLite snapshots → ZIP / optional model findings`
+>
+> Runs the real OpenBiliClaw `/web/` desktop app, adding Research datasets to its navigation and reusing its theme, components and settings. No standalone UI remains. Initial recommendation models and automatic collection are disabled until configured. See the module document for setup and scope.
+
 <div align="center">
 
 # 🦀 OpenBiliClaw

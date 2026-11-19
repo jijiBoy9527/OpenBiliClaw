@@ -1,5 +1,9 @@
 # CLI 命令参考
 
+## 本地研究快捷入口
+
+工作区 `start.cmd` / `workbench.cmd` 启动原生 OpenBiliClaw `/web/#research` 界面，`start-legacy.cmd` 保留旧服务入口。原 `openbiliclaw` CLI 未增加命令。底层为 `uvicorn openbiliclaw.research.api:create_app --factory`，委托完整原生应用，详见 [research](research.md#启动与依赖)。
+
 ## 初步画像完整性（2026-11-11，待发布）
 
 | 已实现功能 | 公共接口与行为 |
@@ -1935,3 +1939,7 @@ TikTok 初始化的请求提示只列三个默认范围；结果摘要将无历�
 安装器子命令 `python -m openbiliclaw.runtime.sponsored_bundle` 的 `--archive/--stage/--if-available` 见[Runtime API](runtime.md#免费模型组件安装与更新)。
 
 免费向量配置复用已配置的 Rust 组件或 HTTPS 中继；只有两者均未配置时才准备 SDK，准备失败保留原配置。
+
+本地工作区 `browser.cmd` 改为打开同一平台源设置；不再启动 opencli 登录浏览器。原研究 CLI UI 未新增；历史 OpenCLI 采集脚本保留但不属于统一 UI 链路。
+
+小红书单来源初始化诊断（2026-11-18）：共享 `run_guided_init` 分别返回 `xhs_bootstrap_empty/timeout/failed/skipped`，报告已完成任务为空、等待超时、任务失败或未建立任务；不再统一要求重新登录。CLI 命令和参数不变，图形一键登录仅本机工作区桌面提供。

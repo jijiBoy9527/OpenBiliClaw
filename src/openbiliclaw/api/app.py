@@ -3032,6 +3032,11 @@ def create_app(
         )
         allowed = (
             method == "OPTIONS"
+            # Research owns its queue/model configuration and does not depend on
+            # the recommendation LLM registry. Its loopback guard still applies.
+            or (hasattr(app.state, "research_service") and (
+                path in {"/research", "/research/"} or path.startswith("/api/research/")
+            ))
             or path == "/api/ping"
             or path == "/api/qr-info"
             or path == "/api/project-stats"
@@ -3084,6 +3089,13 @@ def create_app(
             # can usefully do while repairing the LLM config.
             or path == "/api/sources/status"
             or (path.startswith("/api/sources/") and path.endswith("/verify"))
+            # The local login/research bridge needs the extension's boolean
+            # heartbeat even before a recommendation model is configured.
+            or (
+                hasattr(app.state, "research_service")
+                and path == "/api/sources/xhs/login-state"
+                and method == "POST"
+            )
             or path == "/api/embedding/repair"
             # Blue Fish Lab config/account/ledger are LLM-independent (the lab
             # has its own JSON config and its own cookie), so they stay
@@ -7056,12 +7068,48 @@ def create_app(
                 {"error": "no_sources_selected", "detail": "至少选择一个有效数据来源"},
                 status_code=409,
             )
-        # Preserve the explicit opt-in independently from this run's profile
-        # capability admission. A signed-out optional source may stay enabled
-        # for public discovery, but it must not be scheduled as a personal
-        # profile source until its capability-specific prerequisite is ready.
+        # Preserve the explicit opt-in even when a source cannot supply personal
+        # signals in this run. Admission must not silently disable discovery.
         sources_to_persist = set(effective_sources)
         warnings: list[str] = []
+        # XHS profile/bootstrap data comes from the browser extension. Make a
+        # fresh round trip before reserving an init run so a disconnected or
+        # signed-out browser cannot burn a long run and end in empty_signals.
+        if "xiaohongshu" in effective_sources:
+            from openbiliclaw.api.source_auth.verify import verify_source
+            from openbiliclaw.config import load_config
+
+            xhs_verification = await verify_source(
+                "xiaohongshu",
+                cfg=_pin_active_runtime_config(load_config()),
+                database=ctx.database,
+                event_hub=getattr(ctx, "event_hub", None),
+            )
+            if xhs_verification.outcome != "verified":
+                xhs_logged_out = xhs_verification.outcome == "failed"
+                xhs_detail = (
+                    "浏览器插件已连接，但当前小红书账号未登录。请点击「打开小红书登录」完成登录后重试。"
+                    if xhs_logged_out
+                    else (
+                        f"暂时无法确认小红书连接：{xhs_verification.message} "
+                        "请点击「打开小红书登录」，保持窗口打开后重试。"
+                    )
+                )
+                if effective_sources == {"xiaohongshu"}:
+                    return JSONResponse(
+                        {
+                            "error": (
+                                "xhs_login_required" if xhs_logged_out
+                                else "xhs_connection_unconfirmed"
+                            ),
+                            "detail": xhs_detail,
+                            "capability": "profile",
+                            "readiness": "login_required" if xhs_logged_out else "unverified",
+                        },
+                        status_code=409,
+                    )
+                effective_sources.discard("xiaohongshu")
+                warnings.append(f"小红书个人信号未就绪：本次初始化跳过小红书。{xhs_detail}")
         capability_readiness = getattr(
             ctx.init_prereqs,
             "source_capability_readiness",
@@ -9512,7 +9560,7 @@ def create_app(
                     raise WebSocketDisconnect
                 ctx.presence.heartbeat()
 
-        if bool(getattr(ctx, "degraded", False)):
+        if bool(getattr(ctx, "degraded", False)) and not hasattr(app.state, "research_service"):
             connected = False
             try:
                 ctx.presence.on_connect()
@@ -9590,6 +9638,16 @@ def create_app(
         try:
             ctx.presence.on_connect()
             connected = True
+            if bool(getattr(ctx, "degraded", False)):
+                # Keep the recovery notice, but also subscribe to the normal
+                # event hub: login heartbeat/session handoffs do not need LLMs.
+                await websocket.send_json(
+                    {
+                        "type": "degraded",
+                        "reason": str(getattr(ctx, "degraded_reason", "")),
+                        "issues": _degraded_issues_payload(),
+                    }
+                )
             client_name = str(websocket.query_params.get("client", "") or "").strip().lower()
             if client_name in {"background", "extension", "service-worker"}:
                 from openbiliclaw.bilibili.auth import resolve_runtime_cookie
@@ -26229,6 +26287,13 @@ def create_app(
                 _purged,
                 _existing_self_info.get("nickname", ""),
             )
+
+    # Optional local research workbench; crawler dependencies stay in their own process.
+    import os as _research_os
+    if _research_os.getenv("RESEARCH_WORKSPACE"):
+        from pathlib import Path as _ResearchPath
+        from openbiliclaw.research.api import install as _install_research
+        _install_research(app, _ResearchPath(_research_os.environ["RESEARCH_WORKSPACE"]), lambda: ctx.event_hub)
 
     # ── Mobile Web UI ───────────────────────────────────────────
     from pathlib import Path as _Path

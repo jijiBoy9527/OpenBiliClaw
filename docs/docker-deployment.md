@@ -1,5 +1,7 @@
 # Docker 部署指南
 
+> 本地研究改造不属于此 Docker 部署路径：DPAPI、Windows 进程树和工作区专用 Chrome 均依赖宿主 Windows，只支持直接 loopback 访问。不要把 `/api/research` 代理暴露到远程；使用 [本地入口](modules/research.md#启动与依赖)。原推荐系统的 Docker 部署继续遵循下文。
+
 ## 远程认证变更（2026-11-06）
 
 默认 `api.auth.enabled=false` 只开放可信本机私有 API，安装和初始化不会开启访问密码。Docker bridge、局域网、HTTPS/反向代理通常属于远程访问，首次连接前须通过容器内 `openbiliclaw set-password` 或 `OPENBILICLAW_API_AUTH_ENABLED=true` + `OPENBILICLAW_API_AUTH_PASSWORD` 配置密码；重启后登录。不能通过关闭密码来开放端口。详见[认证契约](modules/api-auth.md)。

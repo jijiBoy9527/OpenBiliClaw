@@ -32,11 +32,15 @@ DESKTOP_SCRIPTS = (
     "/shared/jev-settings.js",
     "/web/assets/js/chat-agent-core.js",
     "/web/assets/js/fish-settings.js",
+    "/web/assets/js/research.js",
+    "/web/assets/js/feed.js",
     "/web/assets/js/app.js",
 )
 _STYLESHEETS = (
     "/web/assets/css/app.css",
     "/web/assets/css/classic.css",
+    "/web/assets/css/research.css",
+    "/web/assets/css/feed.css",
     "/shared/custom-sources.css",
     "/shared/jev-settings.css",
     "/shared/sponsored-settings.css",

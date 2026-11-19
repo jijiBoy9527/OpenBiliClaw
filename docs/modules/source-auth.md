@@ -365,3 +365,14 @@ TikTok 的 passport heartbeat verified 只证明会话有效；搜索可用性�
 `persist_credential("tiktok", "cookie", ...)` 比较保存前后的有效凭据（env 仍优先于文件），通过 `PersistResult.runtime_dirty` 通知 API。有效值变化后，统一写入口经现有 lane handoff 重建捕获 Cookie 的运行时客户端，挂载登录态搜索；重复上报及 env 覆盖下的文件变更不触发重建。公开请求/响应字段保持兼容。
 
 TikTok 的凭据刷新关闭 `run_post_reload_llm_work`：更新搜索客户端不会顺带发起额外模型预热/画像学习，仍按现有 scheduler 与 lane 策略恢复后台组件。
+
+## 本地研究共用小红书入口（2026-11-18）
+
+已实现：小红书凭据表单仍为 `extension_only`，统一引导同一个 OpenBiliClaw 插件与浏览器账号，不提供手工粘贴 Cookie。`auth_xiaohongshu` 仍基于浏览器心跳，不把研究的 HTTP 状态冒充为已验证。仅本地研究任务会按需读取一次会话，经内存与 stdin 交给 MediaCrawler；不新增持久凭据或凭据读取 API。公共交接接口及安全边界见 [research](research.md#统一登录2026-11-18)。
+
+| 已实现能力 | 公共契约 |
+| --- | --- |
+| 小红书初始化能力投影 | `profile` / `bootstrap` 由同一布尔心跳投影 `ready/stale/login_required/unverified`，供初始化清单读取；内容令牌数量不是登录门槛。 |
+| 初始化前连接确认 | `/api/init` 主动复用 `verify_source`，与设置页的 10 秒防抖及五秒心跳等待一致；不根据历史 ready 状态假定当前插件在线。 |
+
+本地研究部署的 degraded 恢复路径继续开放小红书布尔心跳写入，并让 runtime stream 订阅同一事件 hub；保留认证和降级诊断，不要求先配置推荐模型才能登录或交接研究会话。非研究部署的降级路径不变。

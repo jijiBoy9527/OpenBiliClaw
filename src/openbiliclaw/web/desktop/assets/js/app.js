@@ -312,7 +312,7 @@
       label: _initSourceStatus?.sourceLabel?.(key) || INIT_SOURCE_LABEL_FALLBACK[key] || key,
       ...(INIT_SOURCE_DEFAULT_CHECKED.has(key) ? { defaultChecked: true } : {})
     }));
-    const INIT_SOURCE_LOGIN_HINT = "勾选要纳入初始化的平台（至少一个）。需要登录的平台请先在当前浏览器登录；Bangumi、GitHub 与 Linux.do 的公开发现无需登录。GitHub 初始化需公开用户名或可选 PAT。勾选会同时开启该来源。";
+    const INIT_SOURCE_LOGIN_HINT = "勾选要纳入初始化的平台（至少一个）。小红书可直接点击下方登录按钮；其他需登录的平台使用已连接插件的浏览器。Bangumi、GitHub 与 Linux.do 的公开发现无需登录。GitHub 初始化需公开用户名或可选 PAT。勾选会同时开启该来源。";
     const INIT_REASON_TEXT = {
       unsupported_runtime: "Docker / 容器环境不支持在网页里启动初始化。请在宿主机运行：docker exec -it openbiliclaw-backend openbiliclaw init",
       already_running: "初始化正在进行中。",
@@ -1997,6 +1997,9 @@
       }
       $("#statusLabel").textContent = "模型配置待修复";
       $("#runtimeSummary").textContent = "AI 服务配置有误，推荐功能暂停；请在模型设置修复并保存。";
+      // The research route has its own optional model and works without the
+      // recommendation registry. Keep diagnostics visible without stealing it.
+      if (window.location.hash === "#research" && window.OpenBiliClawResearch) return;
       if (degradedRecoveryPresented) return;
       degradedRecoveryPresented = true;
       openSettingsPage("models");
@@ -2197,6 +2200,90 @@
       );
     }
 
+    const xhsLoginFlow = { busy: false, message: "点击按钮后会打开统一登录窗口，并自动检查插件连接。", tone: "muted" };
+
+    function updateXhsLoginMessage(message, tone = "muted") {
+      xhsLoginFlow.message = message;
+      xhsLoginFlow.tone = tone;
+      document.querySelectorAll("[data-xhs-login-status]").forEach((element) => {
+        setProbeStatus(element, tone, message);
+      });
+    }
+
+    function applyXhsLoginCapabilities(result) {
+      if (!state.initStatus?.prerequisites || !result?.auth?.capabilities) return;
+      state.initStatus.prerequisites.source_capabilities ||= {};
+      state.initStatus.prerequisites.source_capabilities.xiaohongshu = result.auth.capabilities;
+      const checklist = grid.querySelector(".init-onboarding .init-checklist");
+      if (checklist) checklist.innerHTML = initChecklistMarkup(state.initStatus, state.initSelectedSources);
+    }
+
+    async function openXhsLogin() {
+      if (xhsLoginFlow.busy) return;
+      const baseUrl = `${location.origin}/api`;
+      // Do not launch a local browser while silently checking a different,
+      // user-configured recommendation backend.
+      if (new URL(getApiBase() || DEFAULT_API_BASE, location.href).origin !== location.origin) {
+        updateXhsLoginMessage("请在本机后端页面打开小红书登录；当前推荐端点与此页面不同。", "error");
+        showToast(xhsLoginFlow.message);
+        return;
+      }
+      xhsLoginFlow.busy = true;
+      updateXhsLoginMessage("正在打开统一小红书登录窗口…", "pending");
+      renderAll();
+      document.querySelectorAll("[data-xhs-login]").forEach((button) => { button.disabled = true; });
+      try {
+        await requestJsonStrict("/research/login", {
+          baseUrl,
+          method: "POST",
+          headers: { "X-Research-Request": "1" },
+          timeoutMs: 12000,
+        });
+        updateXhsLoginMessage("请在打开的窗口中扫码或登录，正在等待插件连接…", "pending");
+        // Up to three minutes for interactive QR login, at least 10 seconds
+        // between heartbeat checks (the verification endpoint's debounce).
+        const deadline = Date.now() + 180000;
+        let lastOutcome = "indeterminate";
+        for (let attempt = 0; Date.now() < deadline; attempt += 1) {
+          if (attempt) await new Promise((resolve) => window.setTimeout(resolve, 10000));
+          if (Date.now() >= deadline) break;
+          const result = await requestJsonStrict("/sources/xiaohongshu/verify", {
+            baseUrl,
+            method: "POST",
+            timeoutMs: 12000,
+          });
+          lastOutcome = result?.outcome || "indeterminate";
+          applyXhsLoginCapabilities(result);
+          if (result?.outcome === "verified" && !result.replayed) {
+            updateXhsLoginMessage("已连接小红书插件，下一步可开始初始化。", "success");
+            showToast("小红书已连接，可以开始初始化");
+            void renderSourcesStatus();
+            return;
+          }
+          if (result?.outcome === "failed") {
+            updateXhsLoginMessage("插件已连接，请在登录窗口完成扫码或登录；这里会继续自动检查。", "pending");
+          } else {
+            updateXhsLoginMessage("正在等待小红书插件回报，请保持登录窗口打开。", "pending");
+          }
+        }
+        updateXhsLoginMessage(lastOutcome === "failed"
+          ? "插件已接通，但还未检测到小红书登录。完成登录后可点「测试连接」，或再次打开登录。"
+          : "自动检查已结束，尚未确认登录连接。请保持窗口打开后点「测试连接」，或再次打开登录。", "warning");
+      } catch (error) {
+        updateXhsLoginMessage(error?.status === 404
+          ? "此后端未安装本机登录组件，请从本机研究工作台打开登录。"
+          : error?.message || "登录窗口启动失败，请确认本机研究服务正在运行。", "error");
+        showToast(xhsLoginFlow.message);
+      } finally {
+        xhsLoginFlow.busy = false;
+        renderAll();
+        document.querySelectorAll("[data-xhs-login]").forEach((button) => { button.disabled = false; });
+        document.querySelectorAll("[data-xhs-login-status]").forEach((element) => {
+          setProbeStatus(element, xhsLoginFlow.tone, xhsLoginFlow.message);
+        });
+      }
+    }
+
     function buildInitChecklist(status, selected = null) {
       const prereq = status?.prerequisites || {};
       const enabled = initEnabledPlatforms(status);
@@ -2216,6 +2303,8 @@
       const biliOk = Boolean(prereq.bilibili_logged_in);
       const biliState = biliOk ? "B 站已登录" : "B 站登录检测未通过";
       const biliDetail = String(prereq.bilibili_detail || "").trim();
+      const xhsSelected = (selectedSources || enabled).includes("xiaohongshu");
+      const xhsReady = Boolean(prereq.source_capabilities?.xiaohongshu?.bootstrap?.ready);
       return [
         {
           key: "bilibili",
@@ -2226,6 +2315,15 @@
             (biliDetail ? `${biliDetail} ` : "") +
             "在浏览器里登录 bilibili.com，扩展会自动把 Cookie 同步给后端；不想接 B 站也可以直接取消勾选。"
         },
+        ...(xhsSelected ? [{
+          key: "xiaohongshu",
+          label: xhsReady ? "小红书登录状态已同步（初始化前会检查连接）" : "小红书尚未连接登录",
+          ok: xhsReady,
+          hard: true,
+          login: true,
+          hint: "点击下方按钮，在打开的统一窗口中扫码或登录。插件会自动连接，首页、设置和研究共用同一个登录态。",
+          loginLabel: "打开小红书登录"
+        }] : []),
         {
           key: "llm",
           label: "AI 服务可用",
@@ -2460,6 +2558,10 @@
     // message, v0.3.156+) — append it so internal_error is diagnosable from
     // the UI instead of only the generic "请稍后重试".
     function initFailureText(status, progress) {
+      return `上次初始化结果：${initFailureDetailText(status, progress)}`;
+    }
+
+    function initFailureDetailText(status, progress) {
       const base = describeInitReason(status?.reason) || "";
       const detail = String(status?.detail || "").trim();
       const reason = String(status?.reason || "");
@@ -2504,7 +2606,10 @@
           const repair = !row.ok && row.repairable
             ? `<button class="small-btn init-repair-btn" type="button" data-embedding-repair>${escapeHtml(row.repairLabel || "自动下载向量模型")}</button>`
             : "";
-          return `<li class="${row.ok ? "init-ok" : "init-missing"} ${row.hard ? "init-hard" : "init-soft"}"><div class="init-row"><span class="init-mark">${mark}</span><span>${escapeHtml(row.label)}</span></div>${hint}${repair}</li>`;
+          const login = row.login
+            ? `<button class="small-btn init-login-btn" type="button" data-xhs-login${xhsLoginFlow.busy ? " disabled" : ""}>${xhsLoginFlow.busy ? "等待登录连接…" : escapeHtml(row.loginLabel)}</button><p class="init-hint" data-xhs-login-status role="status" aria-live="polite">${escapeHtml(xhsLoginFlow.message)}</p>`
+            : "";
+          return `<li class="${row.ok ? "init-ok" : "init-missing"} ${row.hard ? "init-hard" : "init-soft"}"><div class="init-row"><span class="init-mark">${mark}</span><span>${escapeHtml(row.label)}</span></div>${hint}${login}${repair}</li>`;
         })
         .join("");
     }
@@ -2634,6 +2739,13 @@
     function renderInitOnboarding() {
       if (!grid) return;
       const status = state.initStatus;
+      // Prefer the saved enabled sources on first display. Preserve an
+      // explicit selection (including an empty selection) across rerenders.
+      if (!Array.isArray(state.initSelectedSources) && status?.prerequisites) {
+        const enabled = initEnabledPlatforms(status)
+          .filter((key) => INIT_SOURCE_OPTIONS.some((option) => option.key === key));
+        if (enabled.length) state.initSelectedSources = enabled;
+      }
       const progress = initProgressView(status);
       const isRunning = Boolean(status?.running);
       const embeddingPull = embeddingPullProgressView(status);
@@ -2649,12 +2761,12 @@
       const buttonLabel = state.initBusy
         ? "检查中…"
           : isRunning
-          ? "初始化进行中…"
+          ? "正在生成首批推荐…"
           : alreadyInitialized
             ? status?.partial_success ? "初始化部分完成" : "已初始化"
             : displayProgress.failed
-              ? "重试初始化"
-              : "开始初始化";
+              ? "重新生成首批推荐"
+              : "开始生成首批推荐";
       const buttonDisabled = state.initBusy || isRunning || alreadyInitialized;
       const staleness = stalenessView(status);
       const stallText = isRunning
@@ -2681,8 +2793,8 @@
         <section class="init-onboarding" aria-label="引导初始化" data-init-phase="${escapeHtml(phase)}">
           <div class="init-onboarding-copy">
             <p class="eyebrow">Guided init</p>
-            <h3>还没完成初始化</h3>
-            <p class="video-meta">先检查 AI 服务和所选平台登录，再依次拉取数据、分析偏好、保存完整画像，最后严格基于这份画像生成首轮可用推荐。B 站默认勾选但可取消，至少保留一个来源。</p>
+            <h3>先生成你的第一批推荐</h3>
+            <p class="video-meta">这里的“初始化”是：读取所选平台的收藏、点赞等记录 → 用 AI 分析兴趣并保存画像 → 生成首批推荐。默认选中已启用的平台，可自行调整；只跑小红书就只勾选小红书。保持登录窗口打开，点击下方按钮开始；会使用已配置的 AI，可能消耗额度。</p>
           </div>
           ${isRunning ? "" : initSourcesMarkup()}
           <ul class="init-checklist">${initChecklistMarkup(status, state.initSelectedSources)}</ul>
@@ -2713,6 +2825,11 @@
       // Delegated: the checklist's innerHTML is replaced on every status
       // poll, so listeners on the buttons themselves would be lost.
       grid.querySelector(".init-onboarding .init-checklist")?.addEventListener("click", (event) => {
+        const login = event.target.closest?.("[data-xhs-login]");
+        if (login) {
+          void openXhsLogin();
+          return;
+        }
         const btn = event.target.closest?.("[data-embedding-repair]");
         if (btn) void handleEmbeddingRepairClick(btn);
       });
@@ -3046,11 +3163,14 @@
         if (btn) btn.disabled = true;
         return;
       }
-      if (btn) btn.disabled = false;
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = status.initialized ? "重新初始化 / 重建画像" : "前往生成首批推荐";
+      }
       if (statusEl) {
         statusEl.textContent = status.initialized
           ? "系统已初始化。重新初始化会重新拉取数据并重建画像，现有事件与收藏保留。"
-          : "系统尚未初始化完成；正常流程请到「推荐」页点击开始初始化。";
+          : "尚未生成兴趣画像。点击左侧按钮进入首页，选择平台后开始生成首批推荐。";
       }
     }
 
@@ -3071,7 +3191,9 @@
         return;
       }
       if (!status?.initialized) {
-        showToast("系统尚未初始化完成；请先到「推荐」页完成初始化。");
+        openHomePage();
+        renderVideos();
+        grid.querySelector(".init-onboarding")?.scrollIntoView({ block: "start", behavior: "smooth" });
         return;
       }
       const resetCognition = $("#reinitResetCognition")?.checked === true;
@@ -3155,9 +3277,15 @@
       panel._closeTimer = window.setTimeout(finishClose, 220);
     }
 
-    const MAIN_PAGE_IDS = ["homePage", "contentLibraryPage", "profilePage", "chatPage", "settingsPage"];
+    const MAIN_PAGE_IDS = ["homePage", "contentLibraryPage", "profilePage", "chatPage", "settingsPage", "researchPage"];
 
     function showMainPage(pageId) {
+      if (pageId !== "researchPage" && window.location.hash === "#research") {
+        window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}`);
+      }
+      if (pageId !== "researchPage") {
+        document.querySelectorAll('#researchPage .overlay.is-open').forEach((panel) => closePanel(panel.id));
+      }
       MAIN_PAGE_IDS.forEach((id) => {
         const page = document.getElementById(id);
         if (!page) return;
@@ -3181,6 +3309,17 @@
       clearDesktopContentLibraryRoute();
       showMainPage("homePage");
       window.scrollTo({ top: 0, behavior: "smooth" });
+    }
+
+    function openResearchPage() {
+      if (!window.OpenBiliClawResearch?.enabled) return;
+      leaveDesktopContentLibrary();
+      closeMobileMenu();
+      document.querySelectorAll(".drawer.is-open, .overlay.is-open").forEach((panel) => closePanel(panel.id));
+      showMainPage("researchPage");
+      if (window.location.hash !== "#research") window.location.hash = "research";
+      void window.OpenBiliClawResearch.refresh();
+      window.scrollTo({ top: 0, behavior: "auto" });
     }
 
     function openProfilePage() {
@@ -3806,6 +3945,8 @@ ${savedCardFeedbackBarHtml(listKind)}
         });
       });
       window.addEventListener("hashchange", () => {
+        if (window.location.hash === "#research") { openResearchPage(); return; }
+        if (!document.getElementById("researchPage").hidden) showMainPage("homePage");
         const tab = desktopContentLibraryHashTab();
         if (tab) openContentLibraryPage(tab, { updateHash: false });
         else if (desktopContentLibraryVisible) {
@@ -5257,6 +5398,24 @@ ${cardFeedbackBarHtml()}`;
           favBtn.title = saved ? "取消收藏" : "收藏";
         });
       }
+      if (String(item.platform || "").toLowerCase() === "xhs") {
+        const researchButton = document.createElement("button");
+        researchButton.type = "button";
+        researchButton.className = "small-btn research-comment-action";
+        researchButton.textContent = "研究评论 →";
+        researchButton.addEventListener("click", (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          if (!window.OpenBiliClawResearch?.enabled) {
+            showToast("研究工作台未启用，请通过工作区 start.cmd 启动。");
+            return;
+          }
+          const link = contentUrl(item);
+          if (!link) { showToast("没有可采集链接，请到研究工作台搜索该主题。"); return; }
+          window.OpenBiliClawResearch.open(link);
+        });
+        card.appendChild(researchButton);
+      }
       return card;
     }
 
@@ -5350,6 +5509,8 @@ ${cardFeedbackBarHtml()}`;
         return;
       }
       syncRecommendationCards(items);
+      // 同一个推荐流：主题搜到的内容作为额外卡片接在推荐卡后面。
+      if (typeof window.__obcFeedRender === "function") window.__obcFeedRender();
     }
 
     function trackRecommendationClick(item) {
@@ -9376,16 +9537,6 @@ ${cardFeedbackBarHtml()}`;
       };
     }
 
-    function hasPostInitRuntimeSignals(runtime) {
-      return Boolean(runtime) && (
-        runtime.recommendation_count > 0 ||
-        runtime.pool_available_count > 0 ||
-        runtime.pool_pending_count > 0 ||
-        runtime.last_replenished_count > 0 ||
-        runtime.last_discovered_count > 0
-      );
-    }
-
     function shouldShowInitOnboarding(status) {
       const runtime = normalizeRuntimeStatus(status);
       if (Boolean(state.initStatus?.running)) return true;
@@ -9399,10 +9550,12 @@ ${cardFeedbackBarHtml()}`;
       // rebuilt from field-less runtime events / message merges, where the
       // missing `initialized` defaults to true — neither may hide the guided
       // init card while the backend explicitly reports it never initialized.
-      if (state.initStatus?.initialized === false && !state.videos.length && !hasPostInitRuntimeSignals(runtime)) {
-        return true;
-      }
-      return Boolean(status) && runtime.initialized === false && !hasPostInitRuntimeSignals(runtime);
+      // A failed first run can leave raw/pending candidates in the pool. They
+      // are not a usable profile or recommendation pool and must not hide the
+      // guided-init card; otherwise the dashboard only says “backend not
+      // initialized” while offering no way to start the selected platform.
+      if (state.initStatus?.initialized === false) return true;
+      return Boolean(status) && runtime.initialized === false;
     }
 
     function getPoolStatusSummary(status) {
@@ -9470,6 +9623,8 @@ ${cardFeedbackBarHtml()}`;
 
     function getPoolRefreshLabel(runtime) {
       if (!runtime) return "—";
+      if (shouldShowInitOnboarding(runtime)) return state.initStatus?.running
+        ? "正在生成首批推荐" : "请在首页点击生成首批推荐";
       if (runtime.manual_refresh_state !== "running" && runtime.discovery_failure_message) return runtime.discovery_failure_message;
       if (runtime.manual_refresh_message) return runtime.manual_refresh_message;
       if (runtime.manual_refresh_state === "running") return runtime.pool_available_count > 0 ? "后台继续补货中" : "正在补货";
@@ -10020,6 +10175,14 @@ ${cardFeedbackBarHtml()}`;
           timeoutMs: 65000
         });
         renderVerifyResult(statusEl, result);
+        if (slug === "xiaohongshu") {
+          applyXhsLoginCapabilities(result);
+          if (!xhsLoginFlow.busy && !result.replayed) {
+            updateXhsLoginMessage(result.outcome === "verified"
+              ? "已连接小红书插件，可以开始初始化或研究采集。"
+              : result.message, result.outcome === "verified" ? "success" : "warning");
+          }
+        }
         cooldown = Number(result?.retry_after_seconds) || 0;
         // Only a verification that actually moved the credential or the verdict
         // makes the badge above it stale; a refreshed timestamp does not.
@@ -10034,6 +10197,11 @@ ${cardFeedbackBarHtml()}`;
     }
 
     $("#sourceStatusList")?.addEventListener("click", (event) => {
+      const loginButton = event.target.closest(".source-login-btn");
+      if (loginButton) {
+        void openXhsLogin();
+        return;
+      }
       const identityButton = event.target.closest("#v2exAcceptBrowserIdentity");
       if (identityButton) {
         void acceptCurrentV2exBrowserIdentity(identityButton);
@@ -14115,6 +14283,9 @@ ${cardFeedbackBarHtml()}`;
     });
     safeBind("#profileBtn", "click", openProfilePage);
     safeBind("#homeBtn", "click", openHomePage);
+    // 研究页入口已移除（首页内容流接管）；旧构建里没有该按钮时不阻断后续绑定。
+    const researchWorkbenchBtn = $("#researchWorkbenchBtn");
+    if (researchWorkbenchBtn) researchWorkbenchBtn.addEventListener("click", openResearchPage);
     safeBind("#contentLibraryBtn", "click", () => openContentLibraryPage());
     bindDesktopContentLibrary();
     safeBind("#historyRefreshBtn", "click", () => refreshContentHistory(true));
@@ -14860,6 +15031,14 @@ ${cardFeedbackBarHtml()}`;
       console.error("首屏渲染失败", error);
       $("#statusLabel").textContent = "首屏渲染失败";
       $("#runtimeSummary").textContent = error?.message || "请检查后端返回的数据结构。";
+    }
+    if (window.OpenBiliClawResearch) {
+      void window.OpenBiliClawResearch.init({requestJson:requestJsonStrict, showToast, openPanel, closePanel, openPage:openResearchPage,
+        openXhsLogin})
+        .then(() => { if (window.location.hash === "#research") openResearchPage(); })
+        .catch((error) => {
+          if (window.location.hash === "#research") showToast(`研究服务不可用：${error.message}`);
+        });
     }
     const requestedSettingsPanel = new URLSearchParams(window.location.search).get("settings");
     if (["models", "sources", "scheduler", "advanced", "general", "frontend", "logging"].includes(requestedSettingsPanel)) {

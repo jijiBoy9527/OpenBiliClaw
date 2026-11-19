@@ -10236,8 +10236,9 @@ async def run_guided_init(
         )
     elif xhs_status == "empty":
         console.print(
-            "  [yellow]小红书任务跑通但 0 条 notes —— "
-            "可能未登录小红书 / 个人主页没有公开收藏 / 页面 state 漂移。[/yellow]"
+            "  [yellow]小红书任务已结束，但未读到可用于画像的行为记录；"
+            "可能没有可读收藏/点赞/浏览记录，也可能是页面数据结构尚不支持。"
+            "不能仅凭空结果判断为未登录。[/yellow]"
         )
     elif xhs_status == "timeout":
         console.print(
@@ -10813,6 +10814,31 @@ async def run_guided_init(
                 "B 站历史为空，收藏和关注也没有取得可用于画像的信号。"
                 "请先在 B 站产生一些观看 / 收藏 / 关注记录，或启用其他数据来源后重试 init。",
             )
+        if include_xhs and _stage1_source_total == 1:
+            xhs_failure_messages = {
+                "empty": (
+                    "小红书采集任务已结束，但没有读到可用于画像的收藏、点赞或浏览记录。"
+                    "登录连接不等于一定能读取行为数据：账号可能没有可读记录，"
+                    "也可能是网页数据结构尚不支持。请查看采集任务结果，或选择其他来源初始化；"
+                    "研究页的正文和评论数据不会自动作为个人行为画像。"
+                ),
+                "timeout": (
+                    "小红书行为采集任务未在等待时限内完成，本次没有取得可用信号。"
+                    "请保持已登录的小红书窗口打开，查看扩展任务是否仍在执行后再决定重试。"
+                ),
+                "failed": (
+                    "小红书行为采集任务返回失败，本次没有取得可用信号。"
+                    "请查看扩展任务错误；这不等于账号未登录，不应反复重新登录。"
+                ),
+                "skipped": (
+                    "小红书行为采集任务未成功建立，本次没有取得可用信号。"
+                    "请检查后台任务存储与日志；尚不能判断为账号未登录。"
+                ),
+            }
+            if xhs_status in xhs_failure_messages:
+                raise GuidedInitError(
+                    f"xhs_bootstrap_{xhs_status}", xhs_failure_messages[xhs_status]
+                )
         raise GuidedInitError(
             "empty_signals",
             "所选数据来源没有拉到任何行为信号，无法生成初始画像。"

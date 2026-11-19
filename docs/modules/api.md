@@ -1,5 +1,11 @@
 # 后端 API
 
+## 可选本机研究接口
+
+`GET /api/research/jobs/{id}/records?kind=contents` 的 `url` 保留完整来源访问参数；缺失/无效为 null，不合成裸 ID 链接。选中采集与 ZIP 导出共用此持久化字段；启动时从本机旧 JSONL 修复历史 URL，不重新请求平台。完整链接不会作为评论整理输入发送至模型。
+
+设置 `RESEARCH_WORKSPACE` 时注册 `/api/research`，界面为原生 `/web/#research`；旧 `/research/` 重定向至此。接口覆盖队列、候选发现、选定评论采集、数据分页、停止、导出和可选分析；强制直接 loopback、原生认证和同源写标识。推荐模型 degraded 不阻断有独立配置的研究模块。见 [research API](research.md#api)，不改变原推荐接口。
+
 ## 惊喜推荐相对精选（2026-11-11，待发布）
 
 | 已实现能力 / 公开 API | 契约 |
@@ -916,3 +922,9 @@ scheme 归一化的前提是入口能算出外部有效 host：反向代理保�
 `POST /api/config/probe-service` 的 `kind=embedding` 在 provider 为 `siliconflow_free` 时沿用业务向量 180 秒预算，覆盖本地 RPM 窗口等待；Ollama 主动探测仍为 45 秒，其他远端主动探测及后台 health 的 15 秒边界不变。PC / 插件探测客户端给 Embedding 190 秒，首次设置已有 190 秒。忙碌/超时仍返回 `EMBEDDING_BUSY`、`retryable=true`，没有把失败当成功。
 
 `RuntimeContext.try_apply_llm_instance_config()` 在比较完整配置时规范等价语言标签（例如 `zh` / `zh-Hans`），避免 PC 整表保存仅切换默认链却误入后台学习排空。真实语言、端点、模块路由及向量空间变化仍不走该快捷路径；在途调用保留旧 adapter，新调用使用新链。实测与限制见[完整流程验收](../testing/2026-11-08-free-full-e2e.md)。
+
+研究统一登录：POST `/api/research/login` 启动工作区统一登录窗口并自动加载 OpenBiliClaw 插件；POST `/api/research/session` 仅接受本机扩展 Origin + 尚未消费随机 request_id（20 秒超时）。Cookie 仅通过内存与私有管道交付，不持久化、不提供 GET；旧 `/browser` 保留兼容并执行同一登录动作。
+
+小红书初始化准入：`POST /api/init` 先请求插件往返，单选未登录返回 409 `xhs_login_required`，无法确认连接返回 409 `xhs_connection_unconfirmed`；混选跳过未就绪的小红书并给 warning，保留显式来源开关。`GET /api/init-status` 的 `source_capabilities.xiaohongshu.profile/bootstrap` 投影来自同一来源认证 provider。
+
+本地研究部署的 degraded 恢复路径继续开放小红书布尔心跳写入，并让 runtime stream 订阅同一事件 hub；保留认证和降级诊断，不要求先配置推荐模型才能登录或交接研究会话。非研究部署的降级路径不变。

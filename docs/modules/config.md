@@ -1,5 +1,9 @@
 # 配置参考
 
+## 本地研究模块
+
+`RESEARCH_WORKSPACE` 为工作区绝对路径；不存在时完整 API 不启用研究模块。工作区启动器固定 loopback:8766，`OPENBILICLAW_PROJECT_ROOT` 指向工作区 `home/.openbiliclaw`；只在配置不存在时初始化关闭调度/平台源、空推荐模型调用链的 config.toml，已有配置不覆盖。原生设置可编辑推荐配置；研究分析模型独立存 research SQLite，key 使用 Windows DPAPI，不修改推荐模型。`OPENBILICLAW_FISH_LOOP_DISABLED=1` 禁用 Blue Fish。MediaCrawler 环境独立。详见 [research](research.md)。
+
 Instagram 与其它平台共用 `recommendation_date_preset/start/end/weight`，经 TOML、配置 API、桌面与插件日期表单往返；默认全部日期，候选仍走共享日期准入。
 
 > `[llm].concurrency` 缺省/非法值为 3；显式正数原样保留。后台容量为 `max(1, total-1)`（默认 2）；`candidate_eval_concurrency` 仍默认 3。
