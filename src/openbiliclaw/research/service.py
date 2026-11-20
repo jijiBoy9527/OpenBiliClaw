@@ -177,9 +177,14 @@ class Service:
         if wait > 0:
             await asyncio.sleep(wait)
         try:
-            return await self.page_bridge.run(step)
+            result = await self.page_bridge.run(step)
         finally:
             self.store.set_setting(PACING_SETTING, {"last_step_at": time.time()})
+        trace = [str(item)[:160] for item in result.get("trace") or []][:60]
+        if trace:
+            # A step that returns nothing must say where it stopped (tab, executor, page state).
+            self.store.event(job["id"], "插件步骤轨迹：" + " → ".join(trace))
+        return result
 
     async def crawl(self, job: dict):
         config = job["config"]

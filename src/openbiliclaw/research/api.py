@@ -93,6 +93,7 @@ class TaskResult(BaseModel):
     responses: list[PageResponse] = Field(default_factory=list, max_length=600)
     requests: int = Field(default=0, ge=0)
     reply_threads: list[str] = Field(default_factory=list, max_length=600)
+    trace: list[str] = Field(default_factory=list, max_length=60)
 
 
 # Page results carry raw comment pages; every other research request stays small.

@@ -95,6 +95,7 @@ interface StepResult {
   request_id: string;
   status: string;
   reason?: string;
+  trace?: string[];
   [key: string]: unknown;
 }
 
@@ -162,14 +163,17 @@ async function postStepResult(result: StepResult): Promise<void> {
   const endpoint = await loopbackEndpoint("/research/task-result");
   if (!endpoint) return;
   try {
-    await authenticatedFetch(endpoint, {
+    const response = await authenticatedFetch(endpoint, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(result),
       signal: AbortSignal.timeout(30_000),
     });
-  } catch {
-    console.warn("[openbiliclaw] could not deliver the XHS research step result");
+    if (!response.ok) {
+      console.warn(`[openbiliclaw] XHS research step result rejected: HTTP ${response.status}`);
+    }
+  } catch (error) {
+    console.warn("[openbiliclaw] could not deliver the XHS research step result", error);
   }
 }
 
@@ -201,9 +205,16 @@ async function acquireMutex(): Promise<boolean> {
 }
 
 async function runStep(requestId: string, step: XhsResearchStep): Promise<StepResult> {
+  // Stage trail that travels with the result, so a stalled step shows where it stopped.
+  const trace: string[] = ["event_received"];
+  const withTrace = (result: StepResult): StepResult => ({
+    ...result,
+    trace: [...trace, ...(Array.isArray(result.trace) ? result.trace : [])],
+  });
   if (!(await acquireMutex())) {
-    return { request_id: requestId, status: "error", reason: "browser_busy" };
+    return withTrace({ request_id: requestId, status: "error", reason: "browser_busy" });
   }
+  trace.push("mutex_acquired");
   let tabId: number | undefined;
   // An extension API call resets the MV3 worker idle timer; timers alone do not,
   // and a step can wait minutes for the task tab.
@@ -214,9 +225,11 @@ async function runStep(requestId: string, step: XhsResearchStep): Promise<StepRe
   try {
     const tab = await createTaskTab({ url: researchStepUrl(step), active: true });
     tabId = tab.id;
+    trace.push(`tab_opened:${tabId}`);
     if (tabId === undefined || !(await waitForTabComplete(tabId))) {
-      return { request_id: requestId, status: "error", reason: "tab_load_timeout" };
+      return withTrace({ request_id: requestId, status: "error", reason: "tab_load_timeout" });
     }
+    trace.push("tab_loaded");
     const resultPromise = new Promise<StepResult>((resolve) => {
       resultWaiters.set(requestId, { tabId: tabId as number, resolve });
     });
@@ -224,6 +237,7 @@ async function runStep(requestId: string, step: XhsResearchStep): Promise<StepRe
     const task: Record<string, unknown> = { ...step };
     delete task.url;
     let delivered = false;
+    let lastSendError = "";
     for (let attempt = 0; attempt < EXECUTOR_HANDSHAKE_ATTEMPTS && !delivered; attempt += 1) {
       try {
         const ack = (await chrome.tabs.sendMessage(tabId, {
@@ -232,21 +246,27 @@ async function runStep(requestId: string, step: XhsResearchStep): Promise<StepRe
         })) as { accepted?: boolean } | undefined;
         delivered = ack?.accepted === true;
         if (!delivered) await sleep(1_000);
-      } catch {
+      } catch (error) {
         // The document_idle content script may not be listening yet.
+        lastSendError = error instanceof Error ? error.message : String(error);
         await sleep(1_000);
       }
     }
-    if (!delivered) return { request_id: requestId, status: "error", reason: "executor_unreachable" };
+    if (!delivered) {
+      trace.push(`executor_unreachable:${lastSendError.slice(0, 120)}`);
+      return withTrace({ request_id: requestId, status: "error", reason: "executor_unreachable" });
+    }
+    trace.push("executor_acked");
     const timeout = new Promise<StepResult>((resolve) => {
       setTimeout(
         () => resolve({ request_id: requestId, status: "error", reason: "step_timeout" }),
         researchStepTimeoutMs(step),
       );
     });
-    return await Promise.race([resultPromise, timeout]);
-  } catch {
-    return { request_id: requestId, status: "error", reason: "tab_failed" };
+    return withTrace(await Promise.race([resultPromise, timeout]));
+  } catch (error) {
+    trace.push(`tab_failed:${(error instanceof Error ? error.message : String(error)).slice(0, 120)}`);
+    return withTrace({ request_id: requestId, status: "error", reason: "tab_failed" });
   } finally {
     clearInterval(keepAlive);
     resultWaiters.delete(requestId);

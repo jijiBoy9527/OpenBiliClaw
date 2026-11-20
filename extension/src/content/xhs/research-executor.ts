@@ -71,6 +71,8 @@ export interface XhsResearchResult {
   responses: XhsResearchResponse[];
   requests: number;
   reply_threads: string[];
+  /** What the task tab saw; shown in the job events when a step returns nothing. */
+  trace?: string[];
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -252,12 +254,20 @@ function finish(
   status: XhsResearchStatus,
   extra: Partial<XhsResearchResult> = {},
 ): XhsResearchResult {
+  const counts: Record<string, number> = {};
+  for (const item of collector.responses) counts[item.endpoint] = (counts[item.endpoint] ?? 0) + 1;
   return {
     request_id: requestId,
     status,
     responses: collector.responses,
     requests: collector.responses.length,
     reply_threads: [],
+    trace: [
+      `page:${location.pathname}`,
+      `responses:${JSON.stringify(counts)}`,
+      `note:${extra.note ? "yes" : "no"}`,
+      `login_gate:${detectXhsTaskLoginRequired(document)}`,
+    ],
     ...extra,
   };
 }
