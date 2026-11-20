@@ -1,7 +1,7 @@
 """研究采集 → 推荐候选池的唯一搬运口（一条流水线）。
 
 分工：
-- MediaCrawler（research 模块）负责**抓**（笔记 + 评论），它是唯一抓取手；
+- research 模块负责**抓**（笔记 + 评论，由插件在小红书页面内完成），它是唯一抓取手；
 - 推荐引擎负责**排序 / 摘要 / 展示**，它不再自己抓小红书；
 - 本模块只做数据搬运，把 research 采到的笔记转成推荐池的候选行。
 
@@ -31,7 +31,7 @@ def _coerce_int(value: Any) -> int:
 
 
 def _published_iso(raw: Any) -> str:
-    """把 MediaCrawler 的毫秒时间戳转成 ISO；解析不了就原样返回。"""
+    """把研究库的毫秒时间戳转成 ISO；解析不了就原样返回。"""
     if raw in (None, "", 0):
         return ""
     try:

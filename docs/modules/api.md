@@ -923,7 +923,7 @@ scheme 归一化的前提是入口能算出外部有效 host：反向代理保�
 
 `RuntimeContext.try_apply_llm_instance_config()` 在比较完整配置时规范等价语言标签（例如 `zh` / `zh-Hans`），避免 PC 整表保存仅切换默认链却误入后台学习排空。真实语言、端点、模块路由及向量空间变化仍不走该快捷路径；在途调用保留旧 adapter，新调用使用新链。实测与限制见[完整流程验收](../testing/2026-11-08-free-full-e2e.md)。
 
-研究统一登录：POST `/api/research/login` 启动工作区统一登录窗口并自动加载 OpenBiliClaw 插件；POST `/api/research/session` 仅接受本机扩展 Origin + 尚未消费随机 request_id（20 秒超时）。Cookie 仅通过内存与私有管道交付，不持久化、不提供 GET；旧 `/browser` 保留兼容并执行同一登录动作。
+研究统一登录：POST `/api/research/login` 启动工作区统一登录窗口并自动加载 OpenBiliClaw 插件；POST `/api/research/task-result` 仅接受本机扩展 Origin + 尚未消费的随机步骤 request_id，回传插件在小红书页面内截获的响应（请求体上限 16 MB）；后端不接触 Cookie，也不请求小红书；旧 `/browser` 保留兼容并执行同一登录动作。
 
 小红书初始化准入：`POST /api/init` 先请求插件往返，单选未登录返回 409 `xhs_login_required`，无法确认连接返回 409 `xhs_connection_unconfirmed`；混选跳过未就绪的小红书并给 warning，保留显式来源开关。`GET /api/init-status` 的 `source_capabilities.xiaohongshu.profile/bootstrap` 投影来自同一来源认证 provider。
 

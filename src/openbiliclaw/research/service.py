@@ -1,31 +1,45 @@
-"""Single local queue; external crawler remains isolated in its own environment."""
+"""Single local queue; every XHS read runs inside the user's own page via the extension."""
 
 from __future__ import annotations
 
 import asyncio
 import json
-import os
-import subprocess
+import math
+import re
+import time
 import uuid
+from datetime import datetime
 from pathlib import Path
 
 from .analysis import analyze
 from .store import Store
+from .xhs_page import comment_rows, note_row, search_rows
 
 ACTIVE = {"queued", "running", "stopping"}
+# Seconds between page actions (scroll / expand) and between steps when a job
+# sets no interval. Close to a reader's pace; the per-action floor is 1.5 s in
+# research-executor.ts. Not a platform-approved rate.
+DEFAULT_INTERVAL_S = 3
+# XHS web pages load 10 first-level comments / 10 replies / 20 search cards per
+# request; step budgets are derived from these page sizes, plus slack for the
+# page's own first load and an end-of-list probe.
+COMMENTS_PER_PAGE = 10
+SEARCH_NOTES_PER_PAGE = 20
+STEP_SLACK_REQUESTS = 2
+PACING_SETTING = "xhs-page-pacing"
+NOTE_ID = re.compile(r"/(?:explore|discovery/item)/([a-fA-F0-9]{24})")
 
 
 class Service:
-    def __init__(self, root: Path, session_bridge):
+    def __init__(self, root: Path, page_bridge):
         self.root = root.resolve()
-        self.session_bridge = session_bridge
+        self.page_bridge = page_bridge
         self.directory = self.root / "data" / "research"
         self.store = Store(self.directory)
         self.queue = asyncio.Queue()
         self.worker = None
         self.current = None
         self.operation = None
-        self.process = None
         self.instance_lock = None
         self.closing = False
         # 可选：研究内容 → 推荐候选池的搬运回调（由 api.app 注入）。
@@ -57,8 +71,6 @@ class Service:
         for public in self.store.jobs():
             job = self.store.job(public["id"], private=True)
             if job["state"] in ACTIVE:
-                if job.get("pid"):
-                    await self.stop_owned_process(job)
                 if job["kind"] != "analyze":
                     self.store.ingest(job["id"], self.run_dir(job))
                 self.store.update(job["id"], state="interrupted", pid=None,
@@ -121,40 +133,12 @@ class Service:
             return
         if job_id == self.current:
             self.store.update(job_id, state="stopping", message="正在停止；已保存的数据不会删除")
-            if self.process and self.process.returncode is None:
-                await self.stop_owned_process({**job, "pid": self.process.pid})
             if self.operation:
                 self.operation.cancel()
                 await asyncio.gather(self.operation, return_exceptions=True)
             self.store.update(job_id, state="cancelled", message="任务已停止；已采数据可查看和导出")
         else:
             self.store.update(job_id, state="cancelled", message="已取消排队")
-
-    async def stop_owned_process(self, job: dict):
-        pid = job["pid"]
-        command = await asyncio.create_subprocess_exec(
-            "powershell.exe", "-NoProfile", "-NonInteractive", "-Command",
-            f"(Get-CimInstance Win32_Process -Filter 'ProcessId={int(pid)}').CommandLine",
-            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL,
-            creationflags=subprocess.CREATE_NO_WINDOW,
-        )
-        stdout, _ = await command.communicate()
-        line = stdout.decode("utf-8", errors="replace")
-        # Both the launcher filename and this run UUID must match; never kill by name.
-        if "mediacrawler.mjs" not in line or job["id"] not in line:
-            if line.strip():
-                raise ValueError("任务进程归属无法确认，未终止其他进程；请人工检查")
-            return
-        child = await asyncio.create_subprocess_exec(
-            "taskkill.exe", "/PID", str(pid), "/T", "/F",
-            stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL,
-            creationflags=subprocess.CREATE_NO_WINDOW,
-        )
-        await child.wait()
-        if child.returncode:
-            raise ValueError("未能停止采集进程，请检查本机进程状态")
-        if self.process and self.process.pid == pid:
-            await self.process.wait()
 
     async def loop(self):
         while True:
@@ -181,79 +165,126 @@ class Service:
                     except Exception:
                         self.store.update(job_id, state="partial", message="采集文件未能完整入库；保留原文件，请检查数据格式")
                 self.store.update(job_id, pid=None)
-                self.current = self.operation = self.process = None
+                self.current = self.operation = None
             if self.closing:
                 return
 
+    async def run_step(self, job: dict, step: dict) -> dict:
+        """One page step, after the cooldown persisted across jobs and restarts."""
+        interval = step["action_wait_ms"] / 1000
+        last = float(self.store.setting(PACING_SETTING).get("last_step_at") or 0)
+        wait = last + interval - time.time()
+        if wait > 0:
+            await asyncio.sleep(wait)
+        try:
+            return await self.page_bridge.run(step)
+        finally:
+            self.store.set_setting(PACING_SETTING, {"last_step_at": time.time()})
+
     async def crawl(self, job: dict):
         config = job["config"]
-        self.store.event(job["id"], "正在向统一的小红书插件读取本次登录态；不启动第二套浏览器")
-        session = await self.session_bridge.request()
-        directory = self.run_dir(job)
-        directory.mkdir(parents=True, exist_ok=True)
         discovery = job["kind"] == "discover"
-        args = [str(self.root / "runtime" / "node-v22.19.0-win-x64" / "node.exe"),
-                str(self.root / "scripts" / "mediacrawler.mjs"),
-                "--type", "search" if discovery else "detail",
-                "--keywords", config.get("topic", ""),
-                "--crawler_max_notes_count", str(config.get("max_notes", len(config.get("urls", [])))),
-                "--max_comments_count_singlenotes", str(config.get("max_comments", 10)),
-                "--get_comment", "no" if discovery else "yes",
-                "--get_sub_comment", "yes" if config.get("include_replies") and not discovery else "no",
-                "--get_media", "no", "--save_data_option", "jsonl", "--save_data_path", str(directory)]
-        if not discovery:
-            args += ["--specified_id", ",".join(config["urls"])]
-        environment = {**os.environ, "XHS_BROWSER_BACKEND": "openbiliclaw",
-                       "XHS_RESEARCH_PROGRESS": str(directory / "progress.jsonl")}
-        # 间隔和请求上限只在任务显式指定时才覆盖；不指定就用 MediaCrawler 自身默认值
-        # （2 秒间隔、不限请求数），不在这一层叠加额外限速。
-        if config.get("interval") is not None:
-            environment["XHS_OPENCLI_REQUEST_INTERVAL"] = str(config["interval"])
-        if config.get("max_requests") is not None:
-            environment["XHS_OPENCLI_MAX_REQUESTS"] = str(config["max_requests"])
-        with (directory / "private-crawler.log").open("ab") as log:
-            spawning = asyncio.create_task(asyncio.create_subprocess_exec(
-                *args, cwd=self.root, env=environment, stdin=asyncio.subprocess.PIPE, stdout=log, stderr=log,
-                creationflags=subprocess.CREATE_NO_WINDOW,
-            ))
-            try:
-                self.process = await asyncio.shield(spawning)
-            except asyncio.CancelledError:
-                self.process = await spawning
-                self.store.update(job["id"], pid=self.process.pid)
-                await self.stop_owned_process({**job, "pid": self.process.pid})
-                raise
-            self.store.update(job["id"], pid=self.process.pid)
-            try:
-                self.process.stdin.write(session)
-                await self.process.stdin.drain()
-                self.process.stdin.close()
-            except (BrokenPipeError, ConnectionResetError):
-                await self.stop_owned_process({**job, "pid": self.process.pid})
-                raise ValueError("采集进程未能接收登录态，已停止；请检查本机采集环境") from None
-            finally:
-                del session
-            interval = config.get("interval")
-            pace = f"HTTP 间隔 {interval} 秒" if interval is not None else "使用 MediaCrawler 默认节奏"
-            self.store.event(job["id"], f"{'发现内容' if discovery else '采集评论'}；{pace}，请勿关闭工作台服务")
-            while self.process.returncode is None:
-                try:
-                    await asyncio.wait_for(asyncio.shield(self.process.wait()), 2)
-                except asyncio.TimeoutError:
-                    self.store.ingest(job["id"], directory)
-            code = self.process.returncode
-        self.store.ingest(job["id"], directory)
+        topic = config.get("topic", "")
+        directory = self.run_dir(job)
+        jsonl = directory / "xhs" / "jsonl"
+        jsonl.mkdir(parents=True, exist_ok=True)
+        stamp = datetime.now().strftime("%Y-%m-%d")
+        contents_file = jsonl / f"{'search' if discovery else 'detail'}_contents_{stamp}.jsonl"
+        comments_file = jsonl / f"detail_comments_{stamp}.jsonl"
         progress_file = directory / "progress.jsonl"
-        progress = []
-        if progress_file.exists():
-            for line in progress_file.read_text(encoding="utf-8").splitlines():
-                try:
-                    progress.append(json.loads(line))
-                except json.JSONDecodeError:
-                    continue
+        progress: list[dict] = []
+
+        def record(event: str, **fields):
+            item = {"event": event, **fields}
+            progress.append(item)
+            with progress_file.open("a", encoding="utf-8") as file:
+                file.write(json.dumps(item, ensure_ascii=False) + "\n")
+
+        def write(file: Path, rows: list[dict]):
+            with file.open("a", encoding="utf-8") as handle:
+                for row in rows:
+                    handle.write(json.dumps(row, ensure_ascii=False) + "\n")
+
+        interval = config.get("interval")
+        wait_ms = int((DEFAULT_INTERVAL_S if interval is None else interval) * 1000)
+        budget = config.get("max_requests")
+        used = 0
+        stop = None
+        failure = ""
+        max_notes = int(config.get("max_notes", len(config.get("urls", []))))
+        max_comments = int(config.get("max_comments", 10))
+        include_replies = bool(config.get("include_replies")) and not discovery
+        record("scope", mode="search" if discovery else "detail", max_notes=max_notes,
+               max_comments=max_comments, include_replies=include_replies, action_wait_ms=wait_ms,
+               max_requests=budget, transport="extension_page")
+        self.store.event(job["id"], f"{'发现内容' if discovery else '采集评论'}；插件在小红书页面内翻页，"
+                                    f"动作间隔 {wait_ms / 1000:g} 秒，请保持浏览器开启")
+
+        def step_budget(natural: int) -> int:
+            return natural if budget is None else min(natural, int(budget) - used)
+
+        def outcome(result: dict) -> str | None:
+            status = result.get("status")
+            if status in {"login_required", "platform_restricted", "request_cap_reached"}:
+                return status
+            if status == "error":
+                return "account_busy" if result.get("reason") == "browser_busy" else "step_failed"
+            return None
+
+        if discovery:
+            natural = math.ceil(max_notes / SEARCH_NOTES_PER_PAGE) + STEP_SLACK_REQUESTS
+            result = await self.run_step(job, {"kind": "search", "keyword": topic, "max_notes": max_notes,
+                                               "action_wait_ms": wait_ms, "max_requests": step_budget(natural)})
+            used += int(result.get("requests") or 0)
+            write(contents_file, search_rows(result.get("responses") or [], keyword=topic, limit=max_notes))
+            self.store.ingest(job["id"], directory)
+            stop = outcome(result)
+            failure = str(result.get("reason") or "")
+        else:
+            urls = config["urls"]
+            for index, url in enumerate(urls):
+                match = NOTE_ID.search(url)
+                note_id = match[1] if match else ""
+                natural = math.ceil(max_comments / COMMENTS_PER_PAGE) + STEP_SLACK_REQUESTS
+                if include_replies:
+                    natural += max_comments
+                remaining = step_budget(natural)
+                if remaining <= 0:
+                    stop = "request_cap_reached"
+                    break
+                self.store.event(job["id"], f"正在打开第 {index + 1}/{len(urls)} 篇笔记页面")
+                result = await self.run_step(job, {
+                    "kind": "note", "url": url, "note_id": note_id, "max_comments": max_comments,
+                    "include_replies": include_replies, "action_wait_ms": wait_ms, "max_requests": remaining,
+                })
+                used += int(result.get("requests") or 0)
+                note = result.get("note")
+                row = note_row(note, url=url, keyword=topic) if isinstance(note, dict) else None
+                if row is None:
+                    record("note_skipped", content_id=note_id, reason=str(result.get("status") or ""))
+                else:
+                    write(contents_file, [{**row, "note_id": note_id or row["note_id"]}])
+                    rows, summary = comment_rows(result.get("responses") or [], note_id=row["note_id"],
+                                                 max_comments=max_comments, include_replies=include_replies)
+                    write(comments_file, rows)
+                    for root in summary["reply_threads"]:
+                        record("replies_finished", content_id=row["note_id"], root_comment_id=root)
+                    if result.get("status") == "ok":
+                        record("comments_finished", content_id=row["note_id"],
+                               exhausted=summary["list_ended"], truncated=summary["truncated"],
+                               top_level=summary["top_level"])
+                self.store.ingest(job["id"], directory)
+                stop = outcome(result)
+                failure = str(result.get("reason") or "")
+                if stop:
+                    break
+        if stop:
+            record(stop, reason=failure)
+        code = 0 if stop is None else 1
         coverage = {"status": "bounded_sample", "exact_tag_filter": False, "complete": False,
+                    "transport": "extension_page", "page_requests": used,
                     "scope": next((p for p in progress if p.get("event") == "scope"), {}),
-                    "request_exit_code": code, "per_note": [p for p in progress if p.get("event") == "comments_finished"],
+                    "stop_reason": stop, "per_note": [p for p in progress if p.get("event") == "comments_finished"],
                     "reply_threads": [p for p in progress if p.get("event") == "replies_finished"],
                     "skipped_notes": [p for p in progress if p.get("event") == "note_skipped"]}
         saved_ids = {item["content_id"] for item in self.store.records(job["id"], "contents")}
@@ -262,7 +293,7 @@ class Service:
         self.store.update(job["id"], coverage=coverage)
         # Final file validation: a truncated writer is visible as a partial dataset, not silently "success".
         invalid = 0
-        for file in (directory / "xhs" / "jsonl").glob("*.jsonl"):
+        for file in jsonl.glob("*.jsonl"):
             for line in file.read_text(encoding="utf-8-sig").splitlines():
                 try:
                     json.loads(line)
@@ -272,12 +303,12 @@ class Service:
         has_data = bool(records.get("contents"))
         if code != 0 or invalid:
             events = {p.get("event") for p in progress}
-            reason = ("已有其他采集任务占用账号" if "account_busy" in events else
+            reason = ("浏览器里另有插件任务正在使用小红书标签页，请稍后再试" if "account_busy" in events else
                       "请到设置 → 平台源 → 小红书检查 OpenBiliClaw 插件和登录状态" if "login_required" in events else
                       "小红书限制了访问（繁忙、验证码或 IP/账号风控）；已停止，请稍后再试或检查登录状态"
                       if "platform_restricted" in events else
                       "已达到设置的请求上限；可调高上限后再采，或稍后继续" if "request_cap_reached" in events else
-                      "网络失败或采集进程异常退出；请查看采集日志")
+                      "插件页面执行失败或超时；请确认浏览器开着、插件已更新且小红书页面能正常打开")
             self.store.update(job["id"], state="partial" if has_data else "failed",
                               message=f"{reason}。已保存的数据仍可导出" + (f"；{invalid} 行文件不完整" if invalid else ""))
         elif not has_data:

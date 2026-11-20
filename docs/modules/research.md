@@ -40,9 +40,11 @@ python -m uvicorn openbiliclaw.research.api:create_app --factory --host 127.0.0.
                   ↓
 原生 /web/「研究数据」→ 原生认证 + loopback API → SQLite 持久队列（单 worker）
                   ↓
-workspace Node launcher → 独立 MediaCrawler Python → HTTP 正文/评论/回复
-                  ↑                           ↑
-           JSONL / 分页覆盖事件       OpenBiliClaw 插件提供统一登录态（研究任务按次临时读取，不持久保存 Cookie）
+XhsPageBridge → runtime stream `xhs_research_task_requested`（每篇笔记 / 每次搜索一个步骤）
+                  ↓
+OpenBiliClaw 插件 → 前台任务标签页（小红书页面自己请求、自己签名）→ 翻评论 / 展开回复 / 滚动搜索
+                  ↓ MAIN world 截获页面自身的 search / comment / sub-comment 响应
+POST /api/research/task-result → xhs_page 映射为 JSONL + 分页覆盖事件（字段沿用原 MediaCrawler 格式）
                   ↓
 白名单字段归一化 → 数据集快照 → ZIP(JSONL + CSV + manifest)
                   ↓ 用户明确同意后可选
@@ -65,7 +67,7 @@ OpenBiliClaw OpenAIProvider → 有证据 ID 的 findings → 单独导出，包
 | POST `/collect` | `{topic,source_dataset_id,content_ids,max_comments:1..100,include_replies,interval}` 或 `{topic,urls,...}`；最多 10 篇 |
 | POST `/jobs/{id}/stop` | 取消排队 / 停止本任务进程树，保留已写文件 |
 | POST `/import`, `/login`, `/browser` | 导入本地批次 / 启动工作区统一登录窗口并自动加载 OpenBiliClaw 插件；`/browser` 保留兼容 |
-| POST `/session` | 仅本机插件响应尚未消费的随机请求 ID；Cookie 不入库、不提供读取接口 |
+| POST `/task-result` | 仅本机插件 Origin 回传尚未消费的随机步骤 ID；请求体上限 16 MB，晚到 / 重放结果返回 409 |
 | GET/PUT `/model` | 配置兼容模型，key 不返回，Windows DPAPI 加密 |
 | POST `/analyze` | `{dataset_id,goal,consent:true}`；锁定此次同意的模型配置，不随排队期间设置变化而换目标 |
 | GET `/jobs/{id}/export` | 任务结束后的 ZIP 稳定快照 |
@@ -87,9 +89,9 @@ CSV 列表使用 JSON 字符串，公式前缀加单引号；自动化消费优�
 
 状态：queued → running → completed/partial/failed/cancelled；服务重启将遗留活动任务标 interrupted，先核实进程归属并停止本任务遗留进程树，不自动重抓。
 completed 只表示配置范围结束，不代表平台全量。manifest 的 `coverage` 记录一级评论是否分页结束/截断、回复线程、不可访问内容、缺少完成记录与退出码；平台显示数量不等于可获取数量。
-失败/停止后可以导出已入库记录。40 次 HTTP 预算包含登录检查/详情/分页；附带回复可能先耗尽预算。
+失败/停止后可以导出已入库记录。每个步骤的页面请求预算按范围推算（评论每页 10 条、搜索每页 20 条，另加 2 次首屏与结束探测；附带回复时每条一级评论最多再展开一次）；任务显式给出 `max_requests` 时作为全任务上限。
 
-UI 默认 HTTP 间隔 15 秒，可调 10–120 秒；原命令入口未设置仍为 60 秒。统一账号锁为 `.cache/xhs-rate.lock`，冷却时间持久化至 `.cache/xhs-http-state.json`，避免新批次重置冷却。仅能自动回收本 launcher 且 launcher/crawler 两个 PID 均已不存在的锁；缺少子进程信息、其他来源或无法确认的锁拒绝抢占。
+页面动作（翻页、展开回复、搜索滚动）默认间隔 3 秒，表单 `interval` 可调 0–120 秒，插件侧下限 1.5 秒；步骤之间的冷却写入研究库 `xhs-page-pacing` 设置，跨任务和重启保持。插件与其他自动任务标签页共用调度互斥锁，同一时间只跑一个小红书标签页。
 这是保护性配置，不代表平台授权或安全频率保证。不能绕过验证码、自动换账号或自动连续重试。
 
 ## 模型与安全
@@ -97,7 +99,7 @@ UI 默认 HTTP 间隔 15 秒，可调 10–120 秒；原命令入口未设置仍
 原始采集无需模型。用户每次分析明确同意发送文字和关联 ID，可能产生费用。保存设置不调用模型。
 研究模块没有工具执行、自动发帖、私信或 Blue Fish 操作；工作区启动器禁用 Blue Fish，默认平台源和调度关闭。评论是不可信输入。模型输出做字段与证据 ID 校验，不合规批次失败，不编造替代结果。
 整体分析任务不自动重试；复用的上游 provider 仍可能为格式/参数兼容做有限协商请求，单批外层 180 秒超时，用户须留意模型计费。此前已完成批次的 findings 保留。
-仅 Windows 本机支持 DPAPI 和进程树停止；本模块不承诺 Docker/远程访问。MediaCrawler 单独遵循非商业学习许可证，UI 模块属于 OpenBiliClaw MIT；没有复制 MediaCrawler 的 GPL Web UI。
+仅 Windows 本机支持 DPAPI；本模块不承诺 Docker/远程访问。研究采集不再调用 MediaCrawler；仍可导入历史 MediaCrawler JSONL 批次。
 
 ## 当前交付边界
 
@@ -107,7 +109,7 @@ UI 默认 HTTP 间隔 15 秒，可调 10–120 秒；原命令入口未设置仍
 
 首页初始化清单和“设置 → 平台源 → 小红书”共用同一个“打开小红书登录”动作；研究页也直接调用相同登录动作，不再只跳转设置。选用 OpenBiliClaw 插件而非 opencli：原平台功能已经依赖该插件，后者无法取代原平台任务桥；两套插件并存只会增加连接与账号维护。
 
-每个显式采集任务通过原 runtime stream 发出 `xhs_research_session_requested`，更新后的插件仅向 loopback 后端 POST 一次会话。请求随机 ID 20 秒失效，禁止重放和无人请求的同步；没有 Cookie GET 接口，后端与采集进程不另存 Cookie 文件、数据库、命令行参数或环境变量副本；浏览器 profile 仍按正常浏览器机制保存自己的登录会话。后端通过两级私有 stdin 管道交给 MediaCrawler `openbiliclaw` 模式，沿用串行、持久冷却和 40 次 HTTP 预算；浏览器仍负责登录与人工验证。插件/会话缺失时不启动采集，不回退 opencli。平台源心跳不等于 HTTP 访问已成功；采集开始仍执行原有只读登录检查。
+> 2026-11-19 起本段的 Cookie 交接已移除，见下文「页面内采集」。登录仍走同一个插件与浏览器 profile。
 
 工作区会启动随应用管理的 Chrome for Testing 登录窗口，使用稳定的 `browser/openbiliclaw-profile` 并自动加载本次构建的 OpenBiliClaw 插件；不会读取或覆盖日常 Chrome/Edge profile，也不启动 opencli。后端固定为 `127.0.0.1:8766`，原浏览器 profile 与旧脚本仅作历史保留。原平台源开关仅控制推荐/画像接入，不因研究任务而自动打开或导入个人收藏。
 
@@ -126,3 +128,19 @@ UI 默认 HTTP 间隔 15 秒，可调 10–120 秒；原命令入口未设置仍
 ### 画像初始化与研究采集不是同一操作
 
 首页“生成首批推荐”会读取所选平台个人行为、调用推荐模型分析兴趣并生成画像/推荐；当前默认选择已启用的小红书。待评估候选存在不代表画像已完成，不能隐藏首页开始入口。若只需按主题采集笔记和评论，请在“研究数据 → 新建研究”创建发现/采集任务，无需先生成个人画像，也不需要 Embedding；研究模型整理仍按次征得同意。
+
+## 页面内采集（2026-11-19）
+
+研究采集不再由后端或 MediaCrawler 发 HTTP 请求，也不再把小红书 Cookie 交给任何进程。
+
+| 环节 | 实现 |
+| --- | --- |
+| 下发 | `Service.crawl` 把任务拆成步骤：发现 = 一次搜索页，评论采集 = 每篇笔记一页；`XhsPageBridge` 通过 runtime stream 发 `xhs_research_task_requested`，停止任务时发 `xhs_research_task_cancelled` |
+| 执行 | 插件 `background/xhs-research-runner.ts` 仅在后端为 loopback 时，开一个静音的前台任务标签页（带 `openbiliclaw_xhs_task` 标记，不计入被动行为）；`content/xhs/research-executor.ts` 按间隔滚动评论区 / 搜索页、点击「展开回复」 |
+| 取数 | `main/xhs-token-sniffer.ts` 在 MAIN world 截获页面自己发出的 `search/notes`、`comment/page`、`comment/sub/page`、`feed` 响应；只有被本标签页研究执行器激活后才转发原始响应，笔记正文读取页面 `__INITIAL_STATE__` |
+| 停止 | 登录弹窗、验证弹窗、HTTP 461/471、接口码 300011/300012/300013/300015 或 -100/-101/-104 立即结束本步骤，后端记录 `login_required` / `platform_restricted` 并停止整个任务，不自动重试 |
+| 落库 | `research/xhs_page.py` 把页面响应映射成原 MediaCrawler JSONL 字段，写入 `runs/<job>/xhs/jsonl/` 与 `progress.jsonl`，`Store.ingest`、覆盖率清单与 ZIP 导出不变 |
+
+限制：任务标签页必须在前台可见——小红书在隐藏标签页不加载更多评论，最小化窗口会导致步骤超时。搜索卡片只含标题、作者、互动数和封面，正文、标签与发布时间要在评论采集（打开笔记页）时才有。浏览器必须开着并连接本机后端，否则任务直接失败并提示插件未连接。
+
+验证状态：基于代码阅读与静态检查完成，按本机系统规则未运行测试，也未在本机对真实小红书页面跑过采集；页面选择器（`.note-scroller`、`.show-more`）与接口路径需要在实际设备上验收。

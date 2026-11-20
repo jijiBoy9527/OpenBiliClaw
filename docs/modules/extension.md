@@ -1218,8 +1218,8 @@ gitignore），因此后端不可达时插件自身界面仍可本地化；后�
 
 | 已实现功能 | 公共接口 |
 | --- | --- |
-| 小红书同一登录态 | runtime event `xhs_research_session_requested` → POST `/api/research/session` |
+| 小红书研究页面内采集 | runtime event `xhs_research_task_requested` → 前台任务标签页翻页并截获页面自身响应 → POST `/api/research/task-result`（仅 loopback 后端；`xhs_research_task_cancelled` 关闭标签页） |
 
-桌面首页初始化清单、设置中的“小红书”卡片和研究页按钮共用本机 `POST /api/research/login`：工作区启动统一的 Chrome for Testing profile 并加载本次构建的插件，前端随后每 10 秒请求一次小红书心跳验证，区分插件未接通、账号未登录和已连接。研究任务仍只在显式采集时通过上表交接一次性会话；不读取或覆盖用户日常浏览器 profile。
+桌面首页初始化清单、设置中的“小红书”卡片和研究页按钮共用本机 `POST /api/research/login`：工作区启动统一的 Chrome for Testing profile 并加载本次构建的插件，前端随后每 10 秒请求一次小红书心跳验证，区分插件未接通、账号未登录和已连接。研究任务只在显式采集时按上表在页面内执行，不导出 Cookie；不读取或覆盖用户日常浏览器 profile。
 
 仅用户显式研究任务触发；只向 loopback 后端传递当前站点 cookies，不落盘、不进入来源任务结果库，不自动重试。无新增扩展权限。日常登录布尔心跳与所有原平台任务保持不变；需更新插件与后端两端。研究 UI 仅 Windows 本机桌面支持，未新增移动端、CLI 或插件研究 UI，未承诺 Docker/桌面安装包支持。

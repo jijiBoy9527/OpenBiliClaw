@@ -6,7 +6,7 @@ import os
 import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query, Request
 from fastapi.responses import RedirectResponse, Response
@@ -17,8 +17,8 @@ from .analysis import public_settings, save_settings
 from .browser import PlatformLoginBrowser
 from .export import bundle
 from .links import validate_link
+from .page_bridge import XhsPageBridge
 from .service import ACTIVE, Service
-from .session import XhsSessionBridge
 
 
 class Input(BaseModel):
@@ -28,7 +28,7 @@ class Input(BaseModel):
 class Discover(Input):
     topic: str = Field(min_length=1, max_length=100)
     max_notes: int = Field(default=5, ge=1, le=100)
-    # 省略 = 使用 MediaCrawler 默认节奏；显式填写才覆盖（秒）。
+    # 省略 = 插件页面内默认节奏（3 秒/动作）；显式填写才覆盖（秒）。
     interval: int | None = Field(default=None, ge=0, le=120)
 
 
@@ -73,14 +73,32 @@ class ModelSettings(Input):
     clear_key: bool = False
 
 
-class SessionCookie(Input):
-    name: str = Field(min_length=1, max_length=256, pattern=r"^[!#$%&'*+.^_`|~0-9a-zA-Z-]+$")
-    value: str = Field(max_length=16000, pattern=r"^[^\r\n;]*$")
+class PageResponse(BaseModel):
+    """One response the XHS page requested by itself, captured in the task tab."""
+
+    model_config = ConfigDict(extra="ignore")
+    endpoint: Literal["search", "comments", "replies", "feed"]
+    status: int = 200
+    root_comment_id: str = Field(default="", max_length=64)
+    payload: Any = None
 
 
-class SessionReply(Input):
+class TaskResult(BaseModel):
+    model_config = ConfigDict(extra="ignore")
     request_id: str = Field(min_length=40, max_length=64)
-    cookies: list[SessionCookie] = Field(max_length=100)
+    status: Literal["ok", "login_required", "platform_restricted", "request_cap_reached",
+                    "unavailable", "error", "cancelled"]
+    reason: str = Field(default="", max_length=100)
+    note: Any = None
+    responses: list[PageResponse] = Field(default_factory=list, max_length=600)
+    requests: int = Field(default=0, ge=0)
+    reply_threads: list[str] = Field(default_factory=list, max_length=600)
+
+
+# Page results carry raw comment pages; every other research request stays small.
+TASK_RESULT_PATH = "/api/research/task-result"
+MAX_BODY_BYTES = 128_000
+MAX_TASK_RESULT_BYTES = 16_000_000
 
 
 class ResearchRoute(APIRoute):
@@ -106,9 +124,9 @@ async def local_request(request: Request):
     if peer not in {"127.0.0.1", "::1"} or hostname not in {"127.0.0.1", "localhost", "::1"}:
         raise HTTPException(403, "研究工作台仅允许本机访问")
     from openbiliclaw.auth_core import is_extension_origin
-    session_reply = request.url.path == "/api/research/session" and request.method == "POST"
+    session_reply = request.url.path == TASK_RESULT_PATH and request.method == "POST"
     if session_reply and not is_extension_origin(request.headers.get("origin")):
-        raise HTTPException(403, "仅接受本机浏览器插件的登录态响应")
+        raise HTTPException(403, "仅接受本机浏览器插件的页面结果")
     if not session_reply and request.headers.get("sec-fetch-site") == "cross-site":
         raise HTTPException(403, "不接受跨站请求")
     origin = request.headers.get("origin")
@@ -117,7 +135,8 @@ async def local_request(request: Request):
     if not session_reply and request.method not in {"GET", "HEAD"} and request.headers.get("x-research-request") != "1":
         raise HTTPException(403, "缺少工作台请求标识")
     length = request.headers.get("content-length")
-    if length and (not length.isdigit() or int(length) > 128000):
+    limit = MAX_TASK_RESULT_BYTES if session_reply else MAX_BODY_BYTES
+    if length and (not length.isdigit() or int(length) > limit):
         raise HTTPException(413, "请求过大")
 
 
@@ -125,8 +144,8 @@ def install(app: FastAPI, root: Path, get_event_hub):
     async def publish(event: dict) -> bool:
         return await get_event_hub().publish(event)
 
-    session_bridge = XhsSessionBridge(publish)
-    service = Service(root, session_bridge)
+    page_bridge = XhsPageBridge(publish)
+    service = Service(root, page_bridge)
     # 一条流水线：把发现阶段的笔记推进推荐候选池。推荐运行时不可用时，
     # 研究模块保持独立（与改造前一致），不阻塞采集。
     runtime_ctx = getattr(app.state, "runtime_context", None)
@@ -162,15 +181,15 @@ def install(app: FastAPI, root: Path, get_event_hub):
     @router.get("/status")
     def status():
         return {"application": "openbiliclaw-research", "ui": "openbiliclaw-desktop", "workspace": str(service.root),
-                "pid": os.getpid(), "crawler_installed": (service.root / "MediaCrawler/.venv/Scripts/python.exe").exists(),
+                "pid": os.getpid(), "transport": "extension_page",
                 "model": public_settings(service.store), "platform": "xhs", "local_only": True,
                 "login_provider": "openbiliclaw-extension"}
 
-    @router.post("/session")
-    async def session_reply(data: SessionReply):
-        accepted = session_bridge.receive(data.request_id, [cookie.model_dump() for cookie in data.cookies])
+    @router.post("/task-result")
+    async def task_result(data: TaskResult):
+        accepted = page_bridge.receive(data.request_id, data.model_dump())
         if not accepted:
-            raise HTTPException(409, "登录态请求已失效或已处理；未保存 Cookie")
+            raise HTTPException(409, "页面任务已失效或已处理；结果未保存")
         return {"accepted": True}
 
     @router.get("/jobs")

@@ -521,9 +521,8 @@ def auth_bilibili(ctx: SourceAuthContext) -> SourceAuthContract:
 def auth_xiaohongshu(ctx: SourceAuthContext) -> SourceAuthContract:
     """小红书: the extension reports a login bool; no cookie is persisted.
 
-    Platform discovery is client-side. Optional local research obtains a
-    one-shot memory-only session for MediaCrawler, not a persistent credential
-    for this login heartbeat. ``xsec_token`` content rows are a secondary hint, never
+    Platform discovery is client-side. Optional local research runs inside the
+    user's own XHS page through the extension and never exports the session. ``xsec_token`` content rows are a secondary hint, never
     the login gate: a fresh account is logged in with zero tokenized rows.
     """
     stored, when, fresh = _login_heartbeat(

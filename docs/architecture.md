@@ -4,7 +4,7 @@
 
 `首页/设置/研究的同一登录动作 → /api/research/login → 工作区 Chrome for Testing（稳定 profile + 唯一 OpenBiliClaw 插件） → 插件心跳 → /api/init 准入`。登录窗口只由用户点击启动，不读取日常浏览器 profile，不自动采集或调用模型。
 
-`推荐链接/主题 → 原生 /web/ 研究数据页 → /api/research → 单任务 SQLite 队列 → 独立 MediaCrawler（同一 OpenBiliClaw 插件按任务提供临时登录态） → 原始 JSONL → 归一化快照 → ZIP`。
+`推荐链接/主题 → 原生 /web/ 研究数据页 → /api/research → 单任务 SQLite 队列 → OpenBiliClaw 插件前台任务标签页（runtime stream 下发步骤，截获页面自身接口响应，POST /api/research/task-result） → 原始 JSONL → 归一化快照 → ZIP`。
 用户明确同意后，快照可经现有 `OpenAIProvider` 产生独立、有证据 ID 的 findings。通过 `RESEARCH_WORKSPACE` 挂入原生完整 API，没有独立 UI 或轻量服务壳。工作区启动器关闭 Blue Fish、调度和默认平台源；推荐模型未配置时沿用上游 degraded 提示，独立研究队列仍可用。详见 [research](modules/research.md)。
 
 ## 系统概览

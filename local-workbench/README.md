@@ -1,4 +1,4 @@
-# 个人研究采集工作区：MediaCrawler + OpenBiliClaw 统一登录
+# 个人研究采集工作区：OpenBiliClaw 插件页面内采集
 
 ## 新的日常入口：OpenBiliClaw 原生 UI
 
@@ -16,17 +16,17 @@
 
 需要关闭后台时，先在 UI 停止全部任务，再双击 `research-stop.cmd`；`stop.cmd` 则继续关闭旧 OpenCLI/DailyHotApi 服务。`status.cmd` 同时显示工作台状态。
 
-当前源码由 `runtime/research-source.txt` 指向 `unified-xhs-login` 独立 worktree；依赖复用 `apps/OpenBiliClaw-research/.venv`。基于原研究独立 worktree，直接启动 OpenBiliClaw 原生应用，在侧边导航新增“研究数据”，沿用原品牌、主题、组件、推荐页与设置；已移除之前独立自制页面。采集仍由 MediaCrawler 独立执行。首次默认不配置推荐模型、不启用自动采集，原生界面如实提示推荐模型未配置，研究数据功能独立可用；推荐/画像需自行在原生设置中配置，未替用户初始化画像。没有复制 MediaCrawler GPL Web UI。说明：`D:\抓取\apps\OpenBiliClaw-research\docs\modules\research.md`。
+当前源码由 `runtime/research-source.txt` 指向 `unified-xhs-login` 独立 worktree；依赖复用 `apps/OpenBiliClaw-research/.venv`。基于原研究独立 worktree，直接启动 OpenBiliClaw 原生应用，在侧边导航新增“研究数据”，沿用原品牌、主题、组件、推荐页与设置；已移除之前独立自制页面。采集改由 OpenBiliClaw 插件在小红书页面内完成：插件打开前台任务标签页翻评论、展开回复，只收集页面自己发出的请求结果，后端不再请求小红书、也不再接触 Cookie（2026-11-19 起，MediaCrawler HTTP 链路已移除）。首次默认不配置推荐模型、不启用自动采集，原生界面如实提示推荐模型未配置，研究数据功能独立可用；推荐/画像需自行在原生设置中配置，未替用户初始化画像。没有复制 MediaCrawler GPL Web UI。说明：`D:\抓取\apps\OpenBiliClaw-research\docs\modules\research.md`。
 
 新数据位于 `D:\抓取\data\research`；任务、评论和模型设置持久化在 SQLite。界面与导出保留笔记完整来源链接（含 xsec_token/xsec_source），不再拼接裸笔记 ID 链接；缺失时明确提示，链接可能过期或受登录限制。数据包含链接访问参数，请勿公开分享；旧包需重新导出。原 JSONL、Cookie、模型 key 和私有日志不提供下载；模型整理不发送来源链接。模型 key 使用 Windows DPAPI 保存。
 
-UI 默认 HTTP 间隔 15 秒，可调 10–120 秒；旧命令入口未指定仍为 60 秒。两者共用账号锁与持久冷却；单批最多 40 请求，失败不自动重跑，不能理解为平台安全保证。每批都是有边界样本，不承诺全量。
+页面动作（翻页、展开回复）默认间隔 3 秒，可在表单调整；步骤之间的冷却持久保存，重启不重置。遇到登录失效、验证码或风控立即停止，不自动重跑，不能理解为平台安全保证。每批都是有边界样本，不承诺全量。
 
 本轮完成必要语法检查、调用链复查、服务启动并展示已有数据；未新增/执行测试、未追加平台采集、未调用收费模型。UI 发起采集、停止/重启、下载及模型完整链路尚未独立验收；本地代码未提交推送。
 
 ---
 
-## 以下为历史 opencli 命令方案（保留，不属于当前 UI 登录入口）
+## 以下为历史 opencli / MediaCrawler 命令方案（仅存档；`mediacrawler.cmd` 已删除，以下命令不再可用）
 
 2026-11-18 起，研究 UI 仅使用 OpenBiliClaw 插件，原 opencli 命令保留但不再作为 UI 前置步骤。`browser.cmd` 现在打开同一个平台源设置，不再创建另一套登录浏览器。
 

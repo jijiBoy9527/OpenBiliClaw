@@ -139,6 +139,10 @@ import {
   handleCookieSyncRuntimeEvent,
 } from "./cookie-sync.js";
 import { handleE2ERuntimeEvent } from "./e2e-runner.ts";
+import {
+  handleXhsResearchRuntimeEvent,
+  registerXhsResearchRunner,
+} from "./xhs-research-runner.ts";
 // Use .ts extension so node:test's --experimental-strip-types resolver
 // (which doesn't rewrite .js → .ts for source-only modules) can follow
 // the import when test files load these dispatchers directly. esbuild
@@ -279,6 +283,7 @@ let runtimeConnectInFlight = false;
 
 async function handleRuntimeEvent(event: Record<string, unknown>): Promise<void> {
   if (handleCookieSyncRuntimeEvent(event)) return;
+  if (handleXhsResearchRuntimeEvent(event)) return;
 
   try {
     if (await handleE2ERuntimeEvent(event, flushCapturedEventsForE2E)) return;
@@ -715,6 +720,8 @@ async function postBangumiIdentity(payload: { uid: number; username: string }): 
     // Best-effort — the next bgm.tv page view re-reports the identity.
   }
 }
+
+registerXhsResearchRunner();
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message?.type === "NATIVE_SAVE_TASK_TAB_QUERY") {

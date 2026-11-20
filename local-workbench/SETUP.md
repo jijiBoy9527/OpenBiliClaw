@@ -1,7 +1,7 @@
 # 新机器部署（Windows）
 
 这个仓库同时包含 OpenBiliClaw 源码和本地工作台启动壳（`local-workbench/`）。
-MediaCrawler 作为独立仓库单独拉取，放在工作区根的 `MediaCrawler/` 下。
+小红书研究采集由 OpenBiliClaw 插件在你自己的小红书页面内完成（页面自己发请求、自己签名），不再需要 MediaCrawler。
 
 ## 0. 前置
 
@@ -29,17 +29,19 @@ python -m venv .venv
 
 （`pip install -e .` 会用 hatchling 安装 `openbiliclaw` 及全部运行依赖。）
 
-## 3. MediaCrawler（抓取手）
+## 3. 构建插件（采集必需）
+
+研究采集依赖本分支的插件代码，旧插件不能用：
 
 ```powershell
-git clone https://github.com/jijiBoy9527/MediaCrawler.git MediaCrawler
-cd MediaCrawler
-python -m venv .venv
-.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+cd extension
+npm ci
+npm run build
 cd ..
+# 把 manifest.json、dist/、icons/、popup/ 复制到 browser\openbiliclaw-extension\（或直接用 npm run package 生成的 zip 解压）
 ```
 
-> 如果旧机器上已有可用的 `MediaCrawler/`（含 `.venv`），可以直接拷整个目录过来，跳过这一步。
+日常 Chrome 里已装旧版 OpenBiliClaw 的，也要在扩展管理页重新加载新版本。
 
 ## 4. Node 运行时（可选）
 
@@ -54,9 +56,12 @@ https://nodejs.org/dist/v22.19.0/node-v22.19.0-win-x64.zip
 ## 5. 浏览器与插件（登录/采集用）
 
 - `browser/chrome-win64/`：Chrome for Testing 157.0.8103.50（来源见 `DEPLOYMENT.json`）
-- `browser/openbiliclaw-extension/`：插件构建产物（`extension/` 源码构建，或从旧机器复制）
+- `browser/openbiliclaw-extension/`：插件构建产物（第 3 步构建；旧机器上的旧版插件不能用于采集）
 
 没有这两样时，服务能启动、推荐流能看，但**小红书登录和插件采集不可用**。
+
+采集时插件会在浏览器里打开一个**前台**标签页，按设定间隔翻评论、点「展开回复」，完成后自动关闭。
+小红书在后台标签页不会加载更多评论，所以采集期间请不要最小化浏览器窗口，也不要手动关闭这个标签页。
 
 ## 6. 启动
 
@@ -100,8 +105,11 @@ http://127.0.0.1:8766/web/
 **浏览器打开是白屏 / 500**
 → 看 `logs/research.stderr.log`。常见原因是 `local-workbench` 里的 JS 顺序与 `src/openbiliclaw/api/desktop_assets.py` 的清单不一致（两者必须同步改）。
 
-**采集一直 pending**
-→ 设置 → 调度里的「后台 LLM 请求」没开，或插件没连上 8766。
+**采集一直 pending / 提示插件未连接**
+→ 插件没连上 8766，或浏览器没开。研究任务通过插件的实时连接下发，浏览器必须开着。
+
+**采集提示「插件页面执行失败或超时」**
+→ 插件不是本分支构建的新版本，或任务标签页被关掉、窗口被最小化。
 
 **采集慢**
-→ 正常。一次浏览会话 15 个请求上限，每次间隔随机 45–75 秒。
+→ 正常。每个翻页 / 展开动作之间默认间隔 3 秒，可在采集表单里调；遇到验证码或风控会立即停止，不自动重试。

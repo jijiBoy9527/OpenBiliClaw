@@ -1042,7 +1042,7 @@ TikTok 封面：`image_cache → DoH 解析/公网地址验证 → IP 固定（�
                                                    ↓ 登录布尔心跳 → 初始化准入
 推荐 URL / 主题 → 原生 /web/#research → /api/research → SQLite durable queue
                                              ↓
-                           MediaCrawler 子进程 ← OpenBiliClaw 插件一次性登录态（不落盘）
+                    插件前台任务标签页（页面自己请求/签名）→ /api/research/task-result
                                              ↓
                           正文/评论/回复 JSONL + 完整性事件
                                              ↓

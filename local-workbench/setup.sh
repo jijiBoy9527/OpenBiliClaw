@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Linux/macOS 版 setup.ps1：建 venv、装依赖、拉 MediaCrawler、启动工作台。
+# Linux/macOS 版 setup.ps1：建 venv、装依赖、启动工作台（小红书采集由插件在页面内完成）。
 set -euo pipefail
 cd "$(dirname "$(readlink -f "$0")")/.."
 
@@ -19,15 +19,6 @@ step '安装 Python 依赖'
 [ -x .venv/bin/python ] || "$PY" -m venv .venv
 .venv/bin/python -m pip install -U pip --quiet
 .venv/bin/python -m pip install -e . --quiet || fail 'pip install -e . 失败，检查网络或 pyproject.toml'
-
-step '准备 MediaCrawler'
-[ -d MediaCrawler ] || git clone https://github.com/jijiBoy9527/MediaCrawler.git MediaCrawler
-(
-  cd MediaCrawler
-  [ -x .venv/bin/python ] || "$PY" -m venv .venv
-  .venv/bin/python -m pip install -U pip --quiet
-  .venv/bin/python -m pip install -r requirements.txt --quiet
-)
 
 step '检查浏览器'
 if [ ! -x browser/chrome-linux64/chrome ]; then

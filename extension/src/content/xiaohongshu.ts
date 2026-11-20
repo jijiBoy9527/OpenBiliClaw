@@ -31,6 +31,7 @@ import {
 } from "./xhs/bootstrap.js";
 import { attachCoverData } from "./xhs/cover-harvest.js";
 import { registerTaskExecutor } from "./xhs/task-executor.js";
+import { registerResearchExecutor } from "./xhs/research-executor.ts";
 import { NOTE_ANCHOR_SELECTOR } from "./xhs/selectors.ts";
 import { installNativeSaveExecutor } from "./native-save/runtime.ts";
 import { shouldStartPassiveCollector } from "./native-save/task-mode.ts";
@@ -46,6 +47,7 @@ void shouldStartPassiveCollector().then((shouldStart) => {
   if (shouldStart) startCollector(xiaohongshuAdapter);
 });
 registerTaskExecutor();
+registerResearchExecutor();
 registerE2EExecutor("xiaohongshu");
 installNativeSaveExecutor("xiaohongshu", saveXiaohongshu, verifyXiaohongshu);
 

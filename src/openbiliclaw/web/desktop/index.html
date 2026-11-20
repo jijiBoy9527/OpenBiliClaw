@@ -330,7 +330,7 @@
               <form id="research-collect-selection" class="research-toolbar drawer-actions">
                 <span class="video-meta">已选 <b id="research-selected-count">0</b> 篇</span>
                 <label class="settings-field compact"><span>每篇一级评论</span><input name="max_comments" type="number" min="1" max="100" value="20" required></label>
-                <label class="settings-field compact"><span>HTTP 间隔（秒）</span><input name="interval" type="number" min="0" max="120" value="2" required></label>
+                <label class="settings-field compact"><span>页面动作间隔（秒）</span><input name="interval" type="number" min="0" max="120" value="3" required></label>
                 <label class="reshuffle-toggle"><input name="include_replies" type="checkbox" checked><span>附带回复</span></label>
                 <button class="pill-btn primary" type="submit" id="research-collect-button">采集选中评论</button>
               </form>
@@ -348,9 +348,9 @@
             <label class="settings-field full"><span>研究主题</span><input name="topic" placeholder="例如：推拿、肩颈放松" maxlength="100" required></label>
             <div id="research-discovery-fields" class="settings-field full"><label class="settings-field"><span>最多发现笔记数</span><input name="max_notes" type="number" min="1" max="20" value="5" required></label><p class="video-meta">先获取内容和标签，不抓评论。发现结束后选择需要采集的内容。</p></div>
             <div id="research-direct-fields" class="settings-field full" hidden><label class="settings-field"><span>完整网页版笔记链接（每行一条，最多 10 条）</span><textarea name="urls" rows="4" placeholder="https://www.xiaohongshu.com/explore/…?xsec_token=…&amp;xsec_source=…"></textarea></label><p class="video-meta">不支持短链接或裸笔记 ID 链接；完整来源链接会随数据包导出，请勿公开分享。</p><label class="settings-field"><span>每篇最多一级评论数</span><input name="max_comments" type="number" min="1" max="100" value="20"></label><label class="reshuffle-toggle"><input name="include_replies" type="checkbox" checked><span>附带回复（受总请求额度限制）</span></label></div>
-            <label class="settings-field"><span>HTTP 请求间隔（秒）</span><input name="interval" type="number" min="0" max="120" value="2" required></label>
+            <label class="settings-field"><span>页面动作间隔（秒）</span><input name="interval" type="number" min="0" max="120" value="3" required></label>
           </div>
-          <p class="video-meta">保持专用浏览器登录、opencli 扩展连接。单批最多 40 次 HTTP 请求，受限后停止，不自动重试；默认间隔不是平台安全保证。</p>
+          <p class="video-meta">保持浏览器开启并连接 OpenBiliClaw 插件；采集时插件会打开前台小红书标签页翻页，请勿最小化或关闭。遇到登录失效或风控立即停止，不自动重试；默认间隔不是平台安全保证。</p>
           <div class="drawer-actions"><button type="button" class="pill-btn" data-research-close="new-dialog">取消</button><button type="submit" class="pill-btn primary">加入执行队列</button></div>
         </form></div></div>
 

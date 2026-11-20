@@ -2,7 +2,7 @@
 >
 > `Home/settings/research login action → managed browser + OpenBiliClaw extension → heartbeat verification → init admission/research session`
 >
-> `Topic/recommendation URL → OpenBiliClaw desktop Research datasets → isolated MediaCrawler (one-shot OpenBiliClaw extension session) → SQLite snapshots → ZIP / optional model findings`
+> `Topic/recommendation URL → OpenBiliClaw desktop Research datasets → OpenBiliClaw extension task tab (the XHS page sends and signs its own requests; no cookie export) → SQLite snapshots → ZIP / optional model findings`
 >
 > Runs the real OpenBiliClaw `/web/` desktop app, adding Research datasets to its navigation and reusing its theme, components and settings. No standalone UI remains. Initial recommendation models and automatic collection are disabled until configured. See the module document for setup and scope.
 

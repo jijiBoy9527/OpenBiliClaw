@@ -768,25 +768,6 @@ export async function syncXhsLoginStateToBackend(
   }
 }
 
-/** Explicit research jobs only: no cookie cache, task-result storage or automatic retry. */
-async function sendXhsResearchSession(requestId: string): Promise<void> {
-  if (!/^[A-Za-z0-9_-]{40,64}$/.test(requestId)) return;
-  const endpoint = new URL(await apiUrl("/research/session"));
-  // Never export the browser's account session to a remotely configured backend.
-  if (!["127.0.0.1", "localhost", "[::1]"].includes(endpoint.hostname)) return;
-  try {
-    const cookies = await chrome.cookies.getAll({ url: "https://www.xiaohongshu.com/" });
-    await authenticatedFetch(endpoint, {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ request_id: requestId,
-        cookies: cookies.map(({ name, value }) => ({ name, value })) }),
-      signal: AbortSignal.timeout(15000),
-    });
-  } catch {
-    console.warn("[openbiliclaw] could not deliver the one-shot XHS research session");
-  }
-}
-
 export async function syncZhihuLoginStateToBackend(
   source: string = "extension",
 ): Promise<boolean> {
@@ -1007,10 +988,6 @@ export async function syncWeiboLoginStateToBackend(
  */
 export function handleCookieSyncRuntimeEvent(event: Record<string, unknown>): boolean {
   const eventType = String(event.type ?? "");
-  if (eventType === "xhs_research_session_requested") {
-    void sendXhsResearchSession(String(event.request_id ?? ""));
-    return true;
-  }
   if (eventType === "bilibili_cookie_sync_requested") {
     void syncBilibiliCookieToBackend("runtime-stream-request");
     return true;
