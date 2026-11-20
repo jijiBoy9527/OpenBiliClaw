@@ -258,9 +258,16 @@
   }
 
   // 终态结论既写页面也写本地：刷新后不该看到一片空白。
+  // 超时或插件没连上时，系统自己打开工作区窗口，不要求用户去找入口。
+  function systemShouldOpenBrowser(text) {
+    return /插件未|限定时间内|工作区小红书|插件已更新|浏览器开着/.test(String(text || ""));
+  }
+
   function finish(text) {
-    setStatus(text, { login: needsLogin(text) });
+    const open = systemShouldOpenBrowser(text);
+    setStatus(open ? `${text} 系统正在打开工作区小红书窗口。` : text, { login: needsLogin(text) });
     rememberResult(text);
+    if (open && typeof window.__obcOpenXhsLogin === "function") window.__obcOpenXhsLogin();
   }
 
   function rememberJob(job, topic) {
@@ -326,7 +333,7 @@
             ? `已补充 ${state.items.length} 条（任务${jobStateLabel(job)}${suffix}）。`
             : `任务${jobStateLabel(job)}，但没有内容入库${suffix}。`);
         } else {
-          finish(`找「${state.topic || ""}」${jobStateLabel(job)}${suffix}。没有内容入库，可以重试。`);
+          finish(`找「${state.topic || ""}」${jobStateLabel(job)}${suffix}。没有内容入库。系统正在打开工作区窗口，登录接通后会自动再找一次。`);
         }
         return;
       }
@@ -373,7 +380,7 @@
         await loadFeed();
         if (state.items.length) finish(`上次「${state.topic}」已补充 ${state.items.length} 条。`);
       } else {
-        finish(`上次找「${state.topic}」${jobStateLabel(job)}${job.message ? `：${job.message}` : ""}。没有内容入库，可以重试。`);
+        finish(`上次找「${state.topic}」${jobStateLabel(job)}${job.message ? `：${job.message}` : ""}。没有内容入库。系统正在打开工作区窗口，登录接通后会自动再找一次。`);
       }
       return;
     }

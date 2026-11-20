@@ -33,11 +33,41 @@ def step_timeout(step: dict) -> float:
 
 
 class XhsPageBridge:
-    def __init__(self, publish: Callable[[dict], Awaitable[bool]]):
+    def __init__(self, publish: Callable[[dict], Awaitable[bool]], ensure_browser=None, extension_count=None):
         self.publish = publish
+        self.ensure_browser = ensure_browser
+        self.extension_count = extension_count
         self.pending: dict[str, asyncio.Future] = {}
+        self.extension_ready = False
 
     async def run(self, step: dict) -> dict:
+        if not self.extension_ready:
+            await self._prepare_browser()
+        try:
+            result = await self._once(step)
+        except ValueError:
+            self.extension_ready = False
+            await self._prepare_browser()
+            result = await self._once(step)
+        self.extension_ready = True
+        return result
+
+    async def _prepare_browser(self) -> None:
+        """Use a connected extension, or reload the workspace window until one connects."""
+        if self.extension_count is not None and self.extension_count() > 0:
+            return
+        if self.ensure_browser is not None:
+            await self.ensure_browser()
+        for _ in range(30):
+            if self.extension_count is None or self.extension_count() > 0:
+                return
+            await asyncio.sleep(1)
+        raise ValueError(
+            "系统已重新打开工作区小红书窗口，但插件还没连上工作台。"
+            "请看弹出的窗口；如果页面要求登录，登录即可"
+        )
+
+    async def _once(self, step: dict) -> dict:
         request_id = secrets.token_urlsafe(32)
         future = asyncio.get_running_loop().create_future()
         self.pending[request_id] = future
@@ -51,13 +81,15 @@ class XhsPageBridge:
             )
             if delivered is False:
                 raise ValueError(
-                    "小红书插件未连接；请到设置 → 平台源 → 小红书连接 OpenBiliClaw 插件"
+                    "系统已打开工作区小红书窗口并载入插件，但插件还没连上。"
+                    "请看弹出的窗口；如果页面要求登录，登录即可"
                 )
             try:
                 return await asyncio.wait_for(future, step_timeout(step))
             except TimeoutError:
                 raise ValueError(
-                    "插件未在限定时间内返回页面结果；请确认浏览器开着且插件已更新"
+                    "系统已打开工作区小红书窗口，但插件没有在限定时间内交回页面结果。"
+                    "请让弹出的窗口留在前台；如果页面要求登录，登录即可"
                 ) from None
             except asyncio.CancelledError:
                 # Stopped from the workbench: let the extension close the task tab now.

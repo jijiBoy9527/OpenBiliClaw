@@ -2,7 +2,9 @@
  * OpenBiliClaw — configurable local-backend endpoint.
  *
  * The popup settings page can override the backend host and port
- * (default 127.0.0.1:8420). Store-distributed builds only declare loopback
+ * (default 127.0.0.1:8420). A research workbench may also drop `backend.json`
+ * beside this extension; that file wins, so a busy port can move without
+ * rebuilding. Store-distributed builds only declare loopback
  * backend host permissions; custom LAN/self-hosted origins require a build or
  * future optional-permission flow that grants that origin. Every fetch and
  * WebSocket in the extension goes through this module so a single source of
@@ -161,11 +163,34 @@ function installStorageChangeListener(): void {
   }
 }
 
+function endpointFromFile(raw: unknown): BackendEndpoint | null {
+  if (typeof raw !== "object" || raw === null) return null;
+  const port = parseBackendPort((raw as Record<string, unknown>).port);
+  if (port === null) return null;
+  return { ...sanitizeEndpoint(raw), port };
+}
+
+/** Workbench-written file. Present only after this copy is launched for a live server. */
+async function loadPackagedBackend(): Promise<BackendEndpoint | null> {
+  try {
+    const runtime = (globalThis as { chrome?: { runtime?: { getURL?: (path: string) => string } } })
+      .chrome?.runtime;
+    if (!runtime?.getURL) return null;
+    const response = await fetch(runtime.getURL("backend.json"));
+    if (!response.ok) return null;
+    return endpointFromFile(await response.json());
+  } catch {
+    return null;
+  }
+}
+
 async function ensureLoaded(): Promise<BackendEndpoint> {
   if (initialized) return cached;
   if (initPromise) return initPromise;
   initPromise = (async () => {
-    const endpoint = await loadFromStorage();
+    // The packaged file is the workbench's actual listen port. It wins over a
+    // saved popup value so an occupied port can move without rebuilding.
+    const endpoint = (await loadPackagedBackend()) ?? (await loadFromStorage());
     cached = endpoint;
     initialized = true;
     installStorageChangeListener();

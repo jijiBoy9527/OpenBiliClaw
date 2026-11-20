@@ -217,8 +217,8 @@ class Service:
         record("scope", mode="search" if discovery else "detail", max_notes=max_notes,
                max_comments=max_comments, include_replies=include_replies, action_wait_ms=wait_ms,
                max_requests=budget, transport="extension_page")
-        self.store.event(job["id"], f"{'发现内容' if discovery else '采集评论'}；插件在小红书页面内翻页，"
-                                    f"动作间隔 {wait_ms / 1000:g} 秒，请保持浏览器开启")
+        self.store.event(job["id"], f"{'发现内容' if discovery else '采集评论'}；系统会打开工作区小红书窗口，"
+                                    f"插件在页面内翻页，动作间隔 {wait_ms / 1000:g} 秒，请让弹出的窗口留在前台")
 
         def step_budget(natural: int) -> int:
             return natural if budget is None else min(natural, int(budget) - used)

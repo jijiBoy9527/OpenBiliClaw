@@ -144,7 +144,14 @@ def install(app: FastAPI, root: Path, get_event_hub):
     async def publish(event: dict) -> bool:
         return await get_event_hub().publish(event)
 
-    page_bridge = XhsPageBridge(publish)
+    login_browser = PlatformLoginBrowser(root)
+
+    def extension_count() -> int:
+        return int(getattr(app.state, "extension_stream_count", 0) or 0)
+
+    page_bridge = XhsPageBridge(
+        publish, ensure_browser=login_browser.reopen_xhs, extension_count=extension_count
+    )
     service = Service(root, page_bridge)
     # 一条流水线：把发现阶段的笔记推进推荐候选池。推荐运行时不可用时，
     # 研究模块保持独立（与改造前一致），不阻塞采集。
@@ -159,8 +166,6 @@ def install(app: FastAPI, root: Path, get_event_hub):
             )
 
         service.candidate_sink = _push_to_pool
-    login_browser = PlatformLoginBrowser(root)
-
     @asynccontextmanager
     async def lifespan(_app):
         await service.start()

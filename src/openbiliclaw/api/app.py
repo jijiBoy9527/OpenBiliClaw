@@ -9607,6 +9607,7 @@ def create_app(
             return
         queue = await subscribe()
         connected = False
+        extension_stream_held = False
 
         async def _send_runtime_events() -> None:
             while True:
@@ -9650,6 +9651,8 @@ def create_app(
                 )
             client_name = str(websocket.query_params.get("client", "") or "").strip().lower()
             if client_name in {"background", "extension", "service-worker"}:
+                app.state.extension_stream_count = getattr(app.state, "extension_stream_count", 0) + 1
+                extension_stream_held = True
                 from openbiliclaw.bilibili.auth import resolve_runtime_cookie
                 from openbiliclaw.sources.douyin_auth import resolve_douyin_cookie
 
@@ -9777,6 +9780,8 @@ def create_app(
         except Exception:
             logger.debug("runtime-stream closed after handler exception", exc_info=True)
         finally:
+            if extension_stream_held:
+                app.state.extension_stream_count = max(0, getattr(app.state, "extension_stream_count", 1) - 1)
             if connected:
                 ctx.presence.on_disconnect()
             await unsubscribe(queue)
